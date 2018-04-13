@@ -12,6 +12,7 @@ typedef struct _COROUTINE_INSTANCE {
 	HANDLE ThreadHandle;
 
 	PVOID ScheduleRoutine;
+	PVOID InitialRoutine;
 
 	std::list<void*>* FiberList;
 }COROUTINE_INSTANCE, *PCOROUTINE_INSTANCE;
@@ -36,9 +37,10 @@ CoSyncExecute(
 BOOLEAN
 WINAPI
 CoInsertRoutine(
-	PCOROUTINE_INSTANCE Instance,
+	SIZE_T StackSize,
 	LPFIBER_START_ROUTINE StartRoutine,
-	LPVOID Parameter
+	LPVOID Parameter,
+	PCOROUTINE_INSTANCE Instance
 );
 
 /**
@@ -47,5 +49,8 @@ CoInsertRoutine(
  */
 HANDLE
 CoCreateCoroutine(
+	SIZE_T StackSize,
+	LPFIBER_START_ROUTINE InitRoutine,
+	LPVOID Parameter,
 	BOOLEAN NewThread
 );

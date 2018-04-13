@@ -1,5 +1,6 @@
 
 #include "win32_hook.h"
+#include "win32_sysroutine.h"
 
 /**
  * 获取进程映像基址
@@ -135,20 +136,58 @@ PeMapIdtIndexToIatEntry(
 /** 
  * 修改导入地址表项的指针
  */
-BOOLEAN
+PVOID
 HookCallInIat(
 	PVOID* OldRoutineEntry, 
 	PVOID NewRoutine
 ) {
 
 	DWORD Pro;
+	PVOID OldRoutine;
 
 	if (!VirtualProtect(OldRoutineEntry, sizeof(ULONG_PTR), PAGE_EXECUTE_READWRITE, &Pro))
 		return FALSE;
 
-	*OldRoutineEntry = NewRoutine;
+	OldRoutine = InterlockedCompareExchangePointer(OldRoutineEntry, NewRoutine, *(PVOID*)OldRoutineEntry);
 
 	VirtualProtect(OldRoutineEntry, sizeof(ULONG_PTR), Pro, &Pro);
+
+	return OldRoutine;
+}
+
+/**
+ * 对Win32API进行hook
+ */
+BOOLEAN
+CoSetupWin32ApiHook(
+) {
+
+	PVOID Entry;
+	ULONG Index;
+	HMODULE SelfBase = PeGetExeImageBase();
+
+	PIMAGE_IMPORT_DESCRIPTOR Import = PeGetModuleImportEntry(SelfBase, "Kernel32.dll");
+	if (Import == NULL)
+		return FALSE;
+
+	//挂钩CreateFileW
+	Index = PeGetNameImportIndex(SelfBase, Import, "CreateFileW");
+	if (Index == -1)
+		return FALSE;
+
+	Entry = PeMapIdtIndexToIatEntry(SelfBase, Import, Index);
+
+	System_CreateFileW = (Routine_CreateFileW)HookCallInIat((PVOID*)Entry, Coroutine_CreateFileW);
+	
+	
+	//挂钩ReadFile
+	Index = PeGetNameImportIndex(SelfBase, Import, "ReadFile");
+	if (Index == -1)
+		return FALSE;
+
+	Entry = PeMapIdtIndexToIatEntry(SelfBase, Import, Index);
+
+	System_ReadFile = (Routine_ReadFile)HookCallInIat((PVOID*)Entry, Coroutine_ReadFile);
 
 	return TRUE;
 }

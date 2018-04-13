@@ -5,6 +5,9 @@
 Routine_CreateFileW System_CreateFileW;
 Routine_ReadFile System_ReadFile;
 
+/**
+ * 自定义的支持协程的CreateFileW
+ */
 HANDLE
 WINAPI
 Coroutine_CreateFileW(
@@ -37,7 +40,6 @@ Coroutine_CreateFileW(
 		dwFlagsAndAttributes | FILE_FLAG_OVERLAPPED,
 		hTemplateFile
 	);
-	DWORD d = GetLastError();
 	if (FileHandle == INVALID_HANDLE_VALUE)
 		return FileHandle;
 
@@ -46,6 +48,9 @@ Coroutine_CreateFileW(
 	return (HANDLE)FileHandle;
 }
 
+/**
+ * 自定义的支持协程的ReadFile
+ */
 BOOL
 WINAPI
 Coroutine_ReadFile(
@@ -66,10 +71,10 @@ Coroutine_ReadFile(
 	}
 
 	BOOL Succeed = TRUE;
-	PCOROUTINE_INSTANCE Instance;
 	LARGE_INTEGER OriginalOffset, ZeroOffset;
 	PASYNC_CONTEXT AsyncContext = (PASYNC_CONTEXT)malloc(sizeof(ASYNC_CONTEXT));
 	if (AsyncContext == NULL) {
+		*lpNumberOfBytesRead = 0;
 		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
 		return FALSE;
 	}
@@ -100,6 +105,7 @@ Coroutine_ReadFile(
 	Succeed = TRUE;
 
 EXIT:
+	*lpNumberOfBytesRead = AsyncContext->BytesTransfered;
 	free(AsyncContext);
 
 	return Succeed;

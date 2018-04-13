@@ -78,8 +78,15 @@ PeMapIdtIndexToIatEntry(
 /** 
  * 修改导入地址表项的指针
  */
-BOOLEAN
+PVOID
 HookCallInIat(
 	PVOID* OldRoutineEntry,
 	PVOID NewRoutine
+);
+
+/**
+ * 对Win32API进行hook
+ */
+BOOLEAN
+CoSetupWin32ApiHook(
 );

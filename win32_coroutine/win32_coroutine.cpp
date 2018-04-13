@@ -11,35 +11,6 @@
 
 using namespace std;
 
-VOID
-WINAPI CoRoutine1(
-	LPVOID lpFiberParameter
-) {
-
-	CHAR buf[512];
-	DWORD Size;
-
-	HANDLE g = CreateFile(L"C:\\1.txt", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
-
-	ReadFile(g, buf, 512, &Size, NULL);
-
-	CloseHandle(g);
-}
-
-VOID
-WINAPI CoRoutine2(
-	LPVOID lpFiberParameter
-) {
-
-	CHAR buf[512];
-	DWORD Size;
-
-	HANDLE g = CreateFile(L"C:\\1.txt", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
-
-	ReadFile(g, buf, 512, &Size, NULL);
-
-	CloseHandle(g);
-}
 
 /**
  * 手动进行协程调度
@@ -80,11 +51,12 @@ DEAL_COMPLETED_IO:
 	}
 
 	//继续执行因为其他原因打断的协程或者新的协程
-	PVOID Victim = (PVOID)Instance->FiberList->front();
-	if (Victim) {
+	if (!Instance->FiberList->empty()) {
 
+		PVOID Victim = (PVOID)Instance->FiberList->front();
 		Instance->FiberList->pop_front();
 		SwitchToFiber(Victim);
+		
 		//如果有协程可执行，那么可能后面还有新的协程等待执行
 		Timeout = 0;
 	}
@@ -103,18 +75,28 @@ DEAL_COMPLETED_IO:
 BOOLEAN
 WINAPI
 CoInsertRoutine(
-	PCOROUTINE_INSTANCE Instance,
+	SIZE_T StackSize,
 	LPFIBER_START_ROUTINE StartRoutine,
-	LPVOID Parameter
+	LPVOID Parameter,
+	PCOROUTINE_INSTANCE Instance
 ) {
 
+	PCOROUTINE_INSTANCE CoInstance;
+	if (Instance)
+		CoInstance = Instance;
+	else
+		CoInstance = (PCOROUTINE_INSTANCE)TlsGetValue(0);
+
+	if (CoInstance == NULL)
+		return FALSE;
+
 	//创建一个Coroutine
-	PVOID NewFiber = CreateFiber(0, StartRoutine, Parameter);
+	PVOID NewFiber = CreateFiber(StackSize, StartRoutine, Parameter);
 	if (NewFiber == NULL)
 		return FALSE;
 
 	//保存进Coroutine队列
-	Instance->FiberList->push_back(NewFiber);
+	CoInstance->FiberList->push_back(NewFiber);
 
 	return TRUE;
 }
@@ -137,9 +119,7 @@ CoThreadEntryPoint(
 	if (Instance->ScheduleRoutine == NULL)
 		return 0;
 
-	//test
-	CoInsertRoutine(Instance, CoRoutine1, NULL);
-	CoInsertRoutine(Instance, CoRoutine2, NULL);
+	Instance->FiberList->push_back(Instance->InitialRoutine);
 
 	SwitchToFiber(Instance->ScheduleRoutine);
 
@@ -153,7 +133,9 @@ CoThreadEntryPoint(
  */
 HANDLE
 CoCreateCoroutine(
+	SIZE_T StackSize,
 	LPFIBER_START_ROUTINE InitRoutine,
+	LPVOID Parameter,
 	BOOLEAN NewThread
 ) {
 
@@ -167,6 +149,7 @@ CoCreateCoroutine(
 
 	//创建协程调度队列
 	Instance->FiberList = new list<void*>;
+	Instance->InitialRoutine = CreateFiber(StackSize, InitRoutine, Parameter);
 
 	//创建协程宿主线程
 	Instance->ThreadHandle = CreateThread(NULL, 0, CoThreadEntryPoint, Instance, 0, &ThreadId);
