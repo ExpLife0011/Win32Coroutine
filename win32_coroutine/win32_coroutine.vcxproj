@@ -158,6 +158,13 @@
     <ClCompile Include="win32_hook.cpp" />
     <ClCompile Include="win32_sysroutine.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\images\1.jpg" />
+    <Image Include="..\images\2.jpg" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\README.md" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
