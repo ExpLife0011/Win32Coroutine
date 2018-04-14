@@ -156,6 +156,34 @@ HookCallInIat(
 }
 
 /**
+ * Hook一个调用
+ * @param	Module			调用所在的模块基址
+ * @param	Import			导入模块目录项
+ * @param	RoutineName		导入函数名
+ * @param	NewRoutine		新的函数地址
+ */
+PVOID
+HookSingleCall(
+	HMODULE Module,
+	PIMAGE_IMPORT_DESCRIPTOR Import,
+	PSTR RoutineName,
+	PVOID NewRoutine
+) {
+
+	PVOID Entry;
+	ULONG Index;
+
+	//挂钩CreateFileW
+	Index = PeGetNameImportIndex(Module, Import, RoutineName);
+	if (Index == -1)
+		return NULL;
+
+	Entry = PeMapIdtIndexToIatEntry(Module, Import, Index);
+
+	return HookCallInIat((PVOID*)Entry, NewRoutine);
+}
+
+/**
  * 对Win32API进行hook
  */
 BOOLEAN
@@ -170,24 +198,16 @@ CoSetupWin32ApiHook(
 	if (Import == NULL)
 		return FALSE;
 
-	//挂钩CreateFileW
-	Index = PeGetNameImportIndex(SelfBase, Import, "CreateFileW");
-	if (Index == -1)
-		return FALSE;
+	//挂钩CreateFileW，如果没有这个，下面两个也不用考虑了
+	System_CreateFileW = (Routine_CreateFileW)HookSingleCall(SelfBase, Import, "CreateFileW", Coroutine_CreateFileW);
+	if (System_CreateFileW) {
 
-	Entry = PeMapIdtIndexToIatEntry(SelfBase, Import, Index);
-
-	System_CreateFileW = (Routine_CreateFileW)HookCallInIat((PVOID*)Entry, Coroutine_CreateFileW);
-	
-	
-	//挂钩ReadFile
-	Index = PeGetNameImportIndex(SelfBase, Import, "ReadFile");
-	if (Index == -1)
-		return FALSE;
-
-	Entry = PeMapIdtIndexToIatEntry(SelfBase, Import, Index);
-
-	System_ReadFile = (Routine_ReadFile)HookCallInIat((PVOID*)Entry, Coroutine_ReadFile);
+		//挂钩ReadFile
+		System_ReadFile = (Routine_ReadFile)HookSingleCall(SelfBase, Import, "ReadFile", Coroutine_ReadFile);
+		
+		//挂钩WriteFile
+		System_WriteFile = (Routine_WriteFile)HookSingleCall(SelfBase, Import, "WriteFile", Coroutine_WriteFile);
+	}
 
 	return TRUE;
 }

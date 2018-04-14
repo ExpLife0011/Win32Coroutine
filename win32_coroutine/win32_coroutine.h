@@ -6,8 +6,9 @@
 #include "win32_hook.h"
 #include "win32_sysroutine.h"
 
-typedef struct _COROUTINE_INSTANCE {
+#define PERF_TEST
 
+typedef struct _COROUTINE_INSTANCE {
 	HANDLE Iocp;
 	HANDLE ThreadHandle;
 
@@ -15,30 +16,47 @@ typedef struct _COROUTINE_INSTANCE {
 	PVOID InitialRoutine;
 
 	std::list<void*>* FiberList;
+
+	BOOLEAN LastFiberFinished;
 }COROUTINE_INSTANCE, *PCOROUTINE_INSTANCE;
 
-typedef struct _ASYNC_CONTEXT {
-
+typedef struct _COROUTINE_OVERLAPPED_WARPPER {
 	OVERLAPPED Overlapped;
 	DWORD BytesTransfered;
 	PVOID Fiber;
-}ASYNC_CONTEXT, *PASYNC_CONTEXT;
+}COROUTINE_OVERLAPPED_WARPPER, *PCOROUTINE_OVERLAPPED_WARPPER;
+
+typedef struct _COROUTINE_COMPAT_CALL {
+	LPTHREAD_START_ROUTINE CompatRoutine;
+	LPVOID Parameter;
+}COROUTINE_COMPAT_CALL, *PCOROUTINE_COMPAT_CALL;
 
 /**
  * 手动进行协程调度
  */
 VOID
 CoSyncExecute(
+	BOOLEAN Terminate
 );
 
 /**
  * 创建一个协程
  */
 BOOLEAN
-WINAPI
 CoInsertRoutine(
 	SIZE_T StackSize,
 	LPFIBER_START_ROUTINE StartRoutine,
+	LPVOID Parameter,
+	PCOROUTINE_INSTANCE Instance
+);
+
+/**
+ * 创建一个兼容线程ABI的协程
+ */
+BOOLEAN
+CoInsertCompatRoutine(
+	SIZE_T StackSize,
+	LPTHREAD_START_ROUTINE StartRoutine,
 	LPVOID Parameter,
 	PCOROUTINE_INSTANCE Instance
 );

@@ -24,8 +24,19 @@ BOOL
 	_Inout_opt_ LPOVERLAPPED lpOverlapped
 	);
 
+typedef
+BOOL
+(WINAPI* Routine_WriteFile)(
+	_In_ HANDLE hFile,
+	_In_reads_bytes_opt_(nNumberOfBytesToWrite) LPCVOID lpBuffer,
+	_In_ DWORD nNumberOfBytesToWrite,
+	_Out_opt_ LPDWORD lpNumberOfBytesWritten,
+	_Inout_opt_ LPOVERLAPPED lpOverlapped
+	);
+
 extern Routine_CreateFileW System_CreateFileW;
 extern Routine_ReadFile System_ReadFile;
+extern Routine_WriteFile System_WriteFile;
 
 /**
  * 自定义的支持协程的CreateFileW
@@ -52,5 +63,18 @@ Coroutine_ReadFile(
 	_Out_writes_bytes_to_opt_(nNumberOfBytesToRead, *lpNumberOfBytesRead) __out_data_source(FILE) LPVOID lpBuffer,
 	_In_ DWORD nNumberOfBytesToRead,
 	_Out_opt_ LPDWORD lpNumberOfBytesRead,
+	_Inout_opt_ LPOVERLAPPED lpOverlapped
+);
+
+/**
+ * 自定义的支持协程的WriteFile
+ */
+BOOL
+WINAPI
+Coroutine_WriteFile(
+	_In_ HANDLE hFile,
+	_In_reads_bytes_opt_(nNumberOfBytesToWrite) LPCVOID lpBuffer,
+	_In_ DWORD nNumberOfBytesToWrite,
+	_Out_opt_ LPDWORD lpNumberOfBytesWritten,
 	_Inout_opt_ LPOVERLAPPED lpOverlapped
 );

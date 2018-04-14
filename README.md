@@ -4,3 +4,8 @@ Win32ÏÂµÄÐ­³ÌÊµÏÖ£¬»ùÓÚWindowsµÄFiberÊµÏÖ£¬¶îÍâÐÞ¸ÄÁË¼¸¸öIOº¯ÊýÒÔÊµÏÖ·ÇÇÖÈëµÄÍ¬²
 ²Î¿¼ÁËlibco£¬HOOKÁË¼¸¸ö¿ÉÒÔÓÃIOÍê³É¶Ë¿ÚÊµÏÖÒì²½IOµÄº¯Êý£¬½«ÆäÍ¬²½µ÷ÓÃ×ª»»ÎªÒì²½µ÷ÓÃ£¬²¢Í¨¹ýÐ­³Ìµ÷¶ÈÊµÏÖ²¢·¢¡£  
 **ÒÑ¾­ÊµÏÖµÄIOº¯Êý£º**  
  - ReadFile
+ - WriteFile
+ 
+ **ÐÔÄÜ±È½Ï**
+ Ë³Ðò×èÈû¶ÁÈ¡ÎÄ¼þºÍÐ­³ÌÒì²½¶ÁÈ¡ÎÄ¼þµÄÐÔÄÜ¶Ô±È£º
+ ![ÐÔÄÜ±È½Ï](performance.png)

@@ -2,8 +2,9 @@
 #include "win32_sysroutine.h"
 #include "win32_coroutine.h"
 
-Routine_CreateFileW System_CreateFileW;
-Routine_ReadFile System_ReadFile;
+Routine_CreateFileW		System_CreateFileW;
+Routine_ReadFile		System_ReadFile;
+Routine_WriteFile System_WriteFile;
 
 /**
  * 自定义的支持协程的CreateFileW
@@ -19,7 +20,7 @@ Coroutine_CreateFileW(
 	_In_ DWORD dwFlagsAndAttributes,
 	_In_opt_ HANDLE hTemplateFile
 ) {
-
+	
 	if (!IsThreadAFiber()) {
 		return System_CreateFileW(lpFileName,
 			dwDesiredAccess,
@@ -40,6 +41,7 @@ Coroutine_CreateFileW(
 		dwFlagsAndAttributes | FILE_FLAG_OVERLAPPED,
 		hTemplateFile
 	);
+	DWORD err = GetLastError();
 	if (FileHandle == INVALID_HANDLE_VALUE)
 		return FileHandle;
 
@@ -61,6 +63,7 @@ Coroutine_ReadFile(
 	_Inout_opt_ LPOVERLAPPED lpOverlapped
 ) {
 
+	//判断是不是纤程
 	if (!IsThreadAFiber()) {
 		return System_ReadFile(hFile,
 			lpBuffer,
@@ -70,43 +73,129 @@ Coroutine_ReadFile(
 		);
 	}
 
-	BOOL Succeed = TRUE;
+	BOOL Succeed = TRUE, Restore;
 	LARGE_INTEGER OriginalOffset, ZeroOffset;
-	PASYNC_CONTEXT AsyncContext = (PASYNC_CONTEXT)malloc(sizeof(ASYNC_CONTEXT));
-	if (AsyncContext == NULL) {
+
+	//申请一个Overlapped的上下文
+	PCOROUTINE_OVERLAPPED_WARPPER OverlappedWarpper = (PCOROUTINE_OVERLAPPED_WARPPER)malloc(sizeof(COROUTINE_OVERLAPPED_WARPPER));
+	if (OverlappedWarpper == NULL) {
 		*lpNumberOfBytesRead = 0;
 		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
 		return FALSE;
 	}
-	memset(AsyncContext, 0, sizeof(ASYNC_CONTEXT));
+	memset(OverlappedWarpper, 0, sizeof(COROUTINE_OVERLAPPED_WARPPER));
 
 	ZeroOffset.QuadPart = 0;
 
-	SetFilePointerEx(hFile, ZeroOffset, &OriginalOffset, FILE_CURRENT);
-	AsyncContext->Overlapped.Offset = OriginalOffset.LowPart;
-	AsyncContext->Overlapped.OffsetHigh = OriginalOffset.HighPart;
-	AsyncContext->Fiber = GetCurrentFiber();
+	if (SetFilePointerEx(hFile, ZeroOffset, &OriginalOffset, FILE_CURRENT)) {
+		Restore = TRUE;
+	}
+
+	OverlappedWarpper->Overlapped.Offset = OriginalOffset.LowPart;
+	OverlappedWarpper->Overlapped.OffsetHigh = OriginalOffset.HighPart;
+	OverlappedWarpper->Fiber = GetCurrentFiber();
+
+	if (Restore) {
+		SetFilePointerEx(hFile, OriginalOffset, &OriginalOffset, FILE_BEGIN);
+	}
 
 	Succeed = System_ReadFile(hFile,
 		lpBuffer,
 		nNumberOfBytesToRead,
 		lpNumberOfBytesRead,
-		&AsyncContext->Overlapped
+		&OverlappedWarpper->Overlapped
 	);
 	if (Succeed || GetLastError() != ERROR_IO_PENDING) {
 		goto EXIT;
 	}
 
-	CoSyncExecute();
-	if (AsyncContext->BytesTransfered == 0) {
+	//手动调度纤程
+	CoSyncExecute(FALSE);
+	
+	if (OverlappedWarpper->BytesTransfered == 0) {
 		goto EXIT;
 	}
 
 	Succeed = TRUE;
 
 EXIT:
-	*lpNumberOfBytesRead = AsyncContext->BytesTransfered;
-	free(AsyncContext);
+	*lpNumberOfBytesRead = OverlappedWarpper->BytesTransfered;
+	free(OverlappedWarpper);
+
+	return Succeed;
+}
+
+/**
+ * 自定义的支持协程的WriteFile
+ */
+BOOL
+WINAPI
+Coroutine_WriteFile(
+	_In_ HANDLE hFile,
+	_In_reads_bytes_opt_(nNumberOfBytesToWrite) LPCVOID lpBuffer,
+	_In_ DWORD nNumberOfBytesToWrite,
+	_Out_opt_ LPDWORD lpNumberOfBytesWritten,
+	_Inout_opt_ LPOVERLAPPED lpOverlapped
+) {
+
+	//判断是不是纤程
+	if (!IsThreadAFiber()) {
+		return System_WriteFile(hFile,
+			lpBuffer,
+			nNumberOfBytesToWrite,
+			lpNumberOfBytesWritten,
+			lpOverlapped
+		);
+	}
+
+	BOOL Succeed = TRUE, Restore;
+	LARGE_INTEGER OriginalOffset = { 0 }, ZeroOffset;
+
+	//申请一个Overlapped的上下文
+	PCOROUTINE_OVERLAPPED_WARPPER OverlappedWarpper = (PCOROUTINE_OVERLAPPED_WARPPER)malloc(sizeof(COROUTINE_OVERLAPPED_WARPPER));
+	if (OverlappedWarpper == NULL) {
+		*lpNumberOfBytesWritten = 0;
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		return FALSE;
+	}
+	memset(OverlappedWarpper, 0, sizeof(OverlappedWarpper));
+
+	ZeroOffset.QuadPart = 0;
+
+	if (SetFilePointerEx(hFile, ZeroOffset, &OriginalOffset, FILE_CURRENT)) {
+		Restore = TRUE;
+	}
+	
+	OverlappedWarpper->Overlapped.Offset = OriginalOffset.LowPart;
+	OverlappedWarpper->Overlapped.OffsetHigh = OriginalOffset.HighPart;
+	OverlappedWarpper->Fiber = GetCurrentFiber();
+
+	if (Restore) {
+		SetFilePointerEx(hFile, OriginalOffset, &OriginalOffset, FILE_BEGIN);
+	}
+
+	Succeed = System_WriteFile(hFile,
+		lpBuffer,
+		nNumberOfBytesToWrite,
+		lpNumberOfBytesWritten,
+		&OverlappedWarpper->Overlapped
+	);
+	if (Succeed || GetLastError() != ERROR_IO_PENDING) {
+		goto EXIT;
+	}
+
+	//手动调度纤程
+	CoSyncExecute(FALSE);
+
+	if (OverlappedWarpper->BytesTransfered == 0) {
+		goto EXIT;
+	}
+
+	Succeed = TRUE;
+
+EXIT:
+	*lpNumberOfBytesWritten = OverlappedWarpper->BytesTransfered;
+	free(OverlappedWarpper);
 
 	return Succeed;
 }

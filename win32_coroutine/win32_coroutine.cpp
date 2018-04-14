@@ -11,15 +11,33 @@
 
 using namespace std;
 
+/**
+ * 线程函数执行宿主
+ */
+VOID
+WINAPI CoCompatRoutineHost(
+	LPVOID lpFiberParameter
+) {
+
+	//获取参数
+	PCOROUTINE_COMPAT_CALL CompatCall = (PCOROUTINE_COMPAT_CALL)lpFiberParameter;
+	CompatCall->CompatRoutine(CompatCall->Parameter);
+
+	free(CompatCall);
+
+	CoSyncExecute(TRUE);
+}
 
 /**
  * 手动进行协程调度
  */
 VOID
 CoSyncExecute(
+	BOOLEAN Terminate
 ) {
 
 	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)TlsGetValue(0);
+	Instance->LastFiberFinished = Terminate;
 
 	SwitchToFiber(Instance->ScheduleRoutine);
 }
@@ -36,6 +54,7 @@ WINAPI CoScheduleRoutine(
 	ULONG_PTR IoContext;
 	LPOVERLAPPED Overlapped;
 	DWORD Timeout = 0;
+	PVOID Victim;
 
 	//从TLS中获取协程实例
 	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)TlsGetValue(0);
@@ -44,19 +63,28 @@ WINAPI CoScheduleRoutine(
 DEAL_COMPLETED_IO:
 	while (GetQueuedCompletionStatus(Instance->Iocp, &ByteTransfered, &IoContext, &Overlapped, Timeout)) {
 		
-		PASYNC_CONTEXT Context = (PASYNC_CONTEXT)CONTAINING_RECORD(Overlapped, ASYNC_CONTEXT, Overlapped);
+		PCOROUTINE_OVERLAPPED_WARPPER Context = (PCOROUTINE_OVERLAPPED_WARPPER)
+			CONTAINING_RECORD(Overlapped, COROUTINE_OVERLAPPED_WARPPER, Overlapped);
 		Context->BytesTransfered = ByteTransfered;
 
-		SwitchToFiber(Context->Fiber);
+		//这个结构可能在协程执行中被释放了
+		Victim = Context->Fiber;
+		SwitchToFiber(Victim);
+
+		if (Instance->LastFiberFinished == TRUE)
+			DeleteFiber(Victim);
 	}
 
 	//继续执行因为其他原因打断的协程或者新的协程
 	if (!Instance->FiberList->empty()) {
 
-		PVOID Victim = (PVOID)Instance->FiberList->front();
+		Victim = (PVOID)Instance->FiberList->front();
 		Instance->FiberList->pop_front();
 		SwitchToFiber(Victim);
 		
+		if (Instance->LastFiberFinished == TRUE)
+			DeleteFiber(Victim);
+
 		//如果有协程可执行，那么可能后面还有新的协程等待执行
 		Timeout = 0;
 	}
@@ -73,7 +101,6 @@ DEAL_COMPLETED_IO:
  * 创建一个协程
  */
 BOOLEAN
-WINAPI
 CoInsertRoutine(
 	SIZE_T StackSize,
 	LPFIBER_START_ROUTINE StartRoutine,
@@ -97,9 +124,28 @@ CoInsertRoutine(
 
 	//保存进Coroutine队列
 	CoInstance->FiberList->push_back(NewFiber);
-
+	
 	return TRUE;
 }
+
+/**
+ * 创建一个兼容线程ABI的协程
+ */
+BOOLEAN
+CoInsertCompatRoutine(
+	SIZE_T StackSize,
+	LPTHREAD_START_ROUTINE StartRoutine,
+	LPVOID Parameter,
+	PCOROUTINE_INSTANCE Instance
+) {
+
+	PCOROUTINE_COMPAT_CALL CompatCall = (PCOROUTINE_COMPAT_CALL)malloc(sizeof(COROUTINE_COMPAT_CALL));
+	CompatCall->CompatRoutine = StartRoutine;
+	CompatCall->Parameter = Parameter;
+
+	return CoInsertRoutine(StackSize, CoCompatRoutineHost, CompatCall, Instance);
+}
+
 
 /**
  * 纤程入口点
@@ -138,7 +184,7 @@ CoCreateCoroutine(
 	LPVOID Parameter,
 	BOOLEAN NewThread
 ) {
-
+	
 	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)malloc(sizeof(COROUTINE_INSTANCE));
 	DWORD ThreadId;
 
@@ -151,13 +197,27 @@ CoCreateCoroutine(
 	Instance->FiberList = new list<void*>;
 	Instance->InitialRoutine = CreateFiber(StackSize, InitRoutine, Parameter);
 
-	//创建协程宿主线程
-	Instance->ThreadHandle = CreateThread(NULL, 0, CoThreadEntryPoint, Instance, 0, &ThreadId);
-	if (Instance->ThreadHandle == NULL) {
-		goto ERROR_EXIT;
+	if (NewThread) {
+
+		//创建协程宿主线程
+		Instance->ThreadHandle = CreateThread(NULL, 0, CoThreadEntryPoint, Instance, 0, &ThreadId);
+		if (Instance->ThreadHandle == NULL) {
+			goto ERROR_EXIT;
+		}
+	}
+	else {
+
+		//如果不创建新线程，这里只是初始化，需要手动开始调度
+		TlsSetValue(0, Instance);
+
+		Instance->ScheduleRoutine = CreateFiber(0x1000, CoScheduleRoutine, NULL);
+		if (Instance->ScheduleRoutine == NULL)
+			goto ERROR_EXIT;
+
+		Instance->FiberList->push_back(Instance->InitialRoutine);
 	}
 
-	return Instance;
+	return (HANDLE)Instance;
 
 ERROR_EXIT:
 	if (Instance->Iocp)
