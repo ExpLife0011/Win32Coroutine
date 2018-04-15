@@ -72,8 +72,28 @@ DEAL_COMPLETED_IO:
 		Victim = Context->Fiber;
 		SwitchToFiber(Victim);
 
-		if (Instance->LastFiberFinished == TRUE)
+		if (Instance->LastFiberFinished == TRUE) {
 			DeleteFiber(Victim);
+			Instance->LastFiberFinished = FALSE;
+		}
+
+		/*
+		//判断延时执行队列是否为空
+		if (Instance->DelayExecutionList->empty())
+			continue;
+
+		//取出第一个事件，判断是否小于等于当前时间，是的话说明命中
+		PCOROUTINE_EXECUTE_DELAY ExecuteDelay = Instance->DelayExecutionList->front();
+		if (ExecuteDelay->TimeAtLeast <= GetTickCount64()) {
+			Instance->DelayExecutionList->pop_front();
+			SwitchToFiber(ExecuteDelay->Fiber);
+
+			if (Instance->LastFiberFinished == TRUE) {
+				DeleteFiber(Victim);
+				Instance->LastFiberFinished = FALSE;
+			}
+		}
+		*/
 	}
 
 	//继续执行因为其他原因打断的协程或者新的协程
@@ -83,8 +103,10 @@ DEAL_COMPLETED_IO:
 		Instance->FiberList->pop_front();
 		SwitchToFiber(Victim);
 		
-		if (Instance->LastFiberFinished == TRUE)
+		if (Instance->LastFiberFinished == TRUE) {
 			DeleteFiber(Victim);
+			Instance->LastFiberFinished = FALSE;
+		}
 
 		//如果有协程可执行，那么可能后面还有新的协程等待执行
 		Timeout = 0;
@@ -175,6 +197,53 @@ CoThreadEntryPoint(
 }
 
 /**
+ * 添加一个延时执行事件
+ * @param	Fiber			协程
+ * @param	MillionSecond	延时毫秒数
+ * @note	由于协程不是基于时间片调度，这个函数只能延时最小时间，往往可能会比这个时间要长
+ */
+VOID
+CoDelayExecutionAtLeast(
+	PVOID Fiber,
+	DWORD MillionSecond
+) {
+
+	//从TLS中获取协程实例
+	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)TlsGetValue(0);
+
+	//申请一个延时执行对象
+	PCOROUTINE_EXECUTE_DELAY DelayExecution = (PCOROUTINE_EXECUTE_DELAY)malloc(sizeof(COROUTINE_EXECUTE_DELAY));
+	DelayExecution->Fiber = Fiber;
+	DelayExecution->TimeAtLeast = GetTickCount64() + MillionSecond;
+
+	//如果延时队列为空
+	if (Instance->DelayExecutionList->empty()) {
+		Instance->DelayExecutionList->push_front(DelayExecution);
+		return;
+	}
+
+	//如果比最小延时还要小
+	if (DelayExecution->TimeAtLeast < Instance->DelayExecutionList->front()->TimeAtLeast) {
+		Instance->DelayExecutionList->push_front(DelayExecution);
+		return;
+	}
+
+	//插入到对应的位置上
+	BOOLEAN Inserted = FALSE;
+	list<PCOROUTINE_EXECUTE_DELAY>::iterator Iter;
+	for (Iter = Instance->DelayExecutionList->begin();Iter != Instance->DelayExecutionList->end();Iter++) {
+		PCOROUTINE_EXECUTE_DELAY Node = *Iter;
+		if (Node->TimeAtLeast < DelayExecution->TimeAtLeast) {
+			continue;
+		}
+		break;
+	}
+	Instance->DelayExecutionList->insert(Iter--, DelayExecution);
+
+	return;
+}
+
+/**
  * 创建一个协程
  * @param[in]	NewThread		是否创建一个新的线程
  */
@@ -196,6 +265,7 @@ CoCreateCoroutine(
 
 	//创建协程调度队列
 	Instance->FiberList = new list<void*>;
+	Instance->DelayExecutionList = new list<PCOROUTINE_EXECUTE_DELAY>;
 	Instance->InitialRoutine = CreateFiber(StackSize, InitRoutine, Parameter);
 
 	if (NewThread) {

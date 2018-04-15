@@ -89,4 +89,5 @@ HookCallInIat(
  */
 BOOLEAN
 CoSetupWin32ApiHook(
+	PWSTR ModuleName
 );

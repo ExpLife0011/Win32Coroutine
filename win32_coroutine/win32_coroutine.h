@@ -8,18 +8,7 @@
 
 #define PERF_TEST
 
-typedef struct _COROUTINE_INSTANCE {
-	HANDLE Iocp;
-	HANDLE ThreadHandle;
-
-	PVOID ScheduleRoutine;
-	PVOID InitialRoutine;
-
-	std::list<void*>* FiberList;
-
-	BOOLEAN LastFiberFinished;
-}COROUTINE_INSTANCE, *PCOROUTINE_INSTANCE;
-
+//重叠对象扩展结构
 typedef struct _COROUTINE_OVERLAPPED_WARPPER {
 	OVERLAPPED Overlapped;
 	DWORD BytesTransfered;
@@ -28,10 +17,31 @@ typedef struct _COROUTINE_OVERLAPPED_WARPPER {
 	PVOID AcceptBuffer;
 }COROUTINE_OVERLAPPED_WARPPER, *PCOROUTINE_OVERLAPPED_WARPPER;
 
+//兼容线程格式的纤程调用
 typedef struct _COROUTINE_COMPAT_CALL {
 	LPTHREAD_START_ROUTINE CompatRoutine;
 	LPVOID Parameter;
 }COROUTINE_COMPAT_CALL, *PCOROUTINE_COMPAT_CALL;
+
+//延时执行对象
+typedef struct _COROUTINE_EXECUTE_DELAY {
+	DWORD64 TimeAtLeast;
+	LPVOID Fiber;
+}COROUTINE_EXECUTE_DELAY, *PCOROUTINE_EXECUTE_DELAY;
+
+//一个协程实例
+typedef struct _COROUTINE_INSTANCE {
+	HANDLE Iocp;
+	HANDLE ThreadHandle;
+
+	PVOID ScheduleRoutine;
+	PVOID InitialRoutine;
+
+	std::list<void*>* FiberList;
+	std::list<PCOROUTINE_EXECUTE_DELAY>* DelayExecutionList;
+	
+	BOOLEAN LastFiberFinished;
+}COROUTINE_INSTANCE, *PCOROUTINE_INSTANCE;
 
 /**
  * 手动进行协程调度

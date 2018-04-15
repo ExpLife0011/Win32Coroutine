@@ -126,7 +126,7 @@ int main()
 	Event = CreateEvent(NULL, FALSE, FALSE, NULL);
 
 #ifdef THREAD
-	CoSetupWin32ApiHook();
+	CoSetupWin32ApiHook(NULL);
 	HANDLE CoHandle = CoCreateCoroutine(0x1000, InitRoutine, NULL, TRUE);
 
 	WaitForSingleObject(Event, INFINITE);

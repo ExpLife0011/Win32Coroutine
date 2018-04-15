@@ -188,28 +188,27 @@ HookSingleCall(
  */
 BOOLEAN
 CoSetupWin32ApiHook(
+	PWSTR ModuleName
 ) {
 
-	PVOID Entry;
-	ULONG Index;
-	HMODULE SelfBase = PeGetExeImageBase();
+	HMODULE ImageBase = GetModuleHandleW(ModuleName);
 
-	PIMAGE_IMPORT_DESCRIPTOR Import = PeGetModuleImportEntry(SelfBase, "Kernel32.dll");
+	PIMAGE_IMPORT_DESCRIPTOR Import = PeGetModuleImportEntry(ImageBase, "Kernel32.dll");
 	if (Import == NULL)
 		return FALSE;
 
 	//挂钩CreateFileW，如果没有这个，下面两个也不用考虑了
-	System_CreateFileW = (Routine_CreateFileW)HookSingleCall(SelfBase, Import, "CreateFileW", Coroutine_CreateFileW);
+	System_CreateFileW = (Routine_CreateFileW)HookSingleCall(ImageBase, Import, "CreateFileW", Coroutine_CreateFileW);
 	if (System_CreateFileW) {
 
 		//挂钩ReadFile
-		System_ReadFile = (Routine_ReadFile)HookSingleCall(SelfBase, Import, "ReadFile", Coroutine_ReadFile);
+		System_ReadFile = (Routine_ReadFile)HookSingleCall(ImageBase, Import, "ReadFile", Coroutine_ReadFile);
 		
 		//挂钩WriteFile
-		System_WriteFile = (Routine_WriteFile)HookSingleCall(SelfBase, Import, "WriteFile", Coroutine_WriteFile);
+		System_WriteFile = (Routine_WriteFile)HookSingleCall(ImageBase, Import, "WriteFile", Coroutine_WriteFile);
 
 		//挂钩DeviceIoControl
-		System_DeviceIoControl = (Routine_DeviceIoControl)HookSingleCall(SelfBase, Import, "DeviceIoControl", Coroutine_DeviceIoControl);
+		System_DeviceIoControl = (Routine_DeviceIoControl)HookSingleCall(ImageBase, Import, "DeviceIoControl", Coroutine_DeviceIoControl);
 	}
 
 	return TRUE;
