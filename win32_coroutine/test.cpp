@@ -4,7 +4,9 @@
 #include "win32_coroutine.h"
 #include <compressapi.h>
 
+
 #pragma comment(lib,"Cabinet.lib")
+#pragma comment(lib,"ws2_32.lib")
 
 #define TEST
 #define THREAD

@@ -207,6 +207,9 @@ CoSetupWin32ApiHook(
 		
 		//境像WriteFile
 		System_WriteFile = (Routine_WriteFile)HookSingleCall(SelfBase, Import, "WriteFile", Coroutine_WriteFile);
+
+		//境像DeviceIoControl
+		System_DeviceIoControl = (Routine_DeviceIoControl)HookSingleCall(SelfBase, Import, "DeviceIoControl", Coroutine_DeviceIoControl);
 	}
 
 	return TRUE;

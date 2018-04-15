@@ -66,6 +66,7 @@ DEAL_COMPLETED_IO:
 		PCOROUTINE_OVERLAPPED_WARPPER Context = (PCOROUTINE_OVERLAPPED_WARPPER)
 			CONTAINING_RECORD(Overlapped, COROUTINE_OVERLAPPED_WARPPER, Overlapped);
 		Context->BytesTransfered = ByteTransfered;
+		Context->ErrorCode = GetLastError();
 
 		//这个结构可能在协程执行中被释放了
 		Victim = Context->Fiber;
@@ -184,7 +185,7 @@ CoCreateCoroutine(
 	LPVOID Parameter,
 	BOOLEAN NewThread
 ) {
-	
+
 	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)malloc(sizeof(COROUTINE_INSTANCE));
 	DWORD ThreadId;
 

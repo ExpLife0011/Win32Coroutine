@@ -47,10 +47,19 @@
     <ClCompile Include="win32_hook.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="win32_sysroutine.cpp">
+    <ClCompile Include="test.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="test.cpp">
+    <ClCompile Include="test_socket.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="win32_fileio.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="win32_netio.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="win32_pipe.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

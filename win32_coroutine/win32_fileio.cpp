@@ -4,8 +4,8 @@
 
 Routine_CreateFileW		System_CreateFileW;
 Routine_ReadFile		System_ReadFile;
-Routine_WriteFile System_WriteFile;
-
+Routine_WriteFile		System_WriteFile;
+Routine_DeviceIoControl System_DeviceIoControl;
 /**
  * 自定义的支持协程的CreateFileW
  */
@@ -73,8 +73,8 @@ Coroutine_ReadFile(
 		);
 	}
 
-	BOOL Succeed = TRUE, Restore;
-	LARGE_INTEGER OriginalOffset, ZeroOffset;
+	BOOL Succeed = FALSE, Restore;
+	LARGE_INTEGER OriginalOffset = { 0 }, ZeroOffset;
 
 	//申请一个Overlapped的上下文
 	PCOROUTINE_OVERLAPPED_WARPPER OverlappedWarpper = (PCOROUTINE_OVERLAPPED_WARPPER)malloc(sizeof(COROUTINE_OVERLAPPED_WARPPER));
@@ -112,7 +112,8 @@ Coroutine_ReadFile(
 	//手动调度纤程
 	CoSyncExecute(FALSE);
 	
-	if (OverlappedWarpper->BytesTransfered == 0) {
+	SetLastError(OverlappedWarpper->ErrorCode);
+	if (OverlappedWarpper->ErrorCode != ERROR_SUCCESS) {
 		goto EXIT;
 	}
 
@@ -148,7 +149,7 @@ Coroutine_WriteFile(
 		);
 	}
 
-	BOOL Succeed = TRUE, Restore;
+	BOOL Succeed = FALSE, Restore;
 	LARGE_INTEGER OriginalOffset = { 0 }, ZeroOffset;
 
 	//申请一个Overlapped的上下文
@@ -187,7 +188,8 @@ Coroutine_WriteFile(
 	//手动调度纤程
 	CoSyncExecute(FALSE);
 
-	if (OverlappedWarpper->BytesTransfered == 0) {
+	SetLastError(OverlappedWarpper->ErrorCode);
+	if (OverlappedWarpper->ErrorCode != ERROR_SUCCESS) {
 		goto EXIT;
 	}
 
@@ -197,5 +199,77 @@ EXIT:
 	*lpNumberOfBytesWritten = OverlappedWarpper->BytesTransfered;
 	free(OverlappedWarpper);
 
+	return Succeed;
+}
+
+/**
+ * 自定义的支持协程的DeviceIoControl
+ */
+BOOL
+WINAPI
+Coroutine_DeviceIoControl(
+	_In_ HANDLE hDevice,
+	_In_ DWORD dwIoControlCode,
+	_In_reads_bytes_opt_(nInBufferSize) LPVOID lpInBuffer,
+	_In_ DWORD nInBufferSize,
+	_Out_writes_bytes_to_opt_(nOutBufferSize, *lpBytesReturned) LPVOID lpOutBuffer,
+	_In_ DWORD nOutBufferSize,
+	_Out_opt_ LPDWORD lpBytesReturned,
+	_Inout_opt_ LPOVERLAPPED lpOverlapped
+) {
+
+	//判断是不是纤程
+	if (!IsThreadAFiber()) {
+		return System_DeviceIoControl(hDevice,
+			dwIoControlCode,
+			lpInBuffer,
+			nInBufferSize,
+			lpOutBuffer,
+			nOutBufferSize,
+			lpBytesReturned,
+			lpOverlapped
+		);
+	}
+
+	BOOL Succeed = FALSE;
+
+	//申请一个Overlapped的上下文
+	PCOROUTINE_OVERLAPPED_WARPPER OverlappedWarpper = (PCOROUTINE_OVERLAPPED_WARPPER)malloc(sizeof(COROUTINE_OVERLAPPED_WARPPER));
+	if (OverlappedWarpper == NULL) {
+		*lpBytesReturned = 0;
+		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		return FALSE;
+	}
+	memset(OverlappedWarpper, 0, sizeof(OverlappedWarpper));
+
+	OverlappedWarpper->Fiber = GetCurrentFiber();
+
+	Succeed = System_DeviceIoControl(hDevice,
+		dwIoControlCode,
+		lpInBuffer,
+		nInBufferSize,
+		lpOutBuffer,
+		nOutBufferSize,
+		lpBytesReturned,
+		&OverlappedWarpper->Overlapped
+	);
+	if (Succeed || GetLastError() != ERROR_IO_PENDING) {
+		goto EXIT;
+	}
+
+	//手动调度纤程
+	CoSyncExecute(FALSE);
+
+	SetLastError(OverlappedWarpper->ErrorCode);
+	if (OverlappedWarpper->ErrorCode != ERROR_SUCCESS) {
+		goto EXIT;
+	}
+
+	Succeed = TRUE;
+
+EXIT:
+	*lpBytesReturned = OverlappedWarpper->BytesTransfered;
+	free(OverlappedWarpper);
+	
 	return Succeed;
 }

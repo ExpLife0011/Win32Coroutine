@@ -100,7 +100,7 @@
       </PrecompiledHeader>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_DEBUG;_CONSOLE;WIN32_LEAN_AND_MEAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -154,9 +154,12 @@
   <ItemGroup>
     <ClCompile Include="stdafx.cpp" />
     <ClCompile Include="test.cpp" />
+    <ClCompile Include="test_socket.cpp" />
     <ClCompile Include="win32_coroutine.cpp" />
     <ClCompile Include="win32_hook.cpp" />
-    <ClCompile Include="win32_sysroutine.cpp" />
+    <ClCompile Include="win32_fileio.cpp" />
+    <ClCompile Include="win32_pipe.cpp" />
+    <ClCompile Include="win32_netio.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\images\1.jpg" />
