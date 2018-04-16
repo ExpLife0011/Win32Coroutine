@@ -23,6 +23,12 @@ typedef struct _COROUTINE_COMPAT_CALL {
 	LPVOID Parameter;
 }COROUTINE_COMPAT_CALL, *PCOROUTINE_COMPAT_CALL;
 
+//标准格式的纤程调用
+typedef struct _COROUTINE_STANDARD_CALL {
+	LPFIBER_START_ROUTINE FiberRoutine;
+	LPVOID Parameter;
+}COROUTINE_STANDARD_CALL, *PCOROUTINE_STANDARD_CALL;
+
 //延时执行对象
 typedef struct _COROUTINE_EXECUTE_DELAY {
 	DWORD64 TimeAtLeast;
@@ -71,6 +77,25 @@ CoInsertCompatRoutine(
 	LPTHREAD_START_ROUTINE StartRoutine,
 	LPVOID Parameter,
 	PCOROUTINE_INSTANCE Instance
+);
+
+/**
+ * 创建一个普通的纤程
+ * 为了保证纤程对象能及时的回收，尽量调用这个接口
+ */
+BOOLEAN
+CoInsertStandardRoutine(
+	SIZE_T StackSize,
+	LPFIBER_START_ROUTINE StartRoutine,
+	LPVOID Parameter,
+	PCOROUTINE_INSTANCE Instance
+);
+
+/**
+ * 手动启动调度
+ */
+BOOLEAN
+CoStartCoroutineManually(
 );
 
 /**

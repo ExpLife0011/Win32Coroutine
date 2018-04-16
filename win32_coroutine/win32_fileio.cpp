@@ -73,7 +73,7 @@ Coroutine_ReadFile(
 		);
 	}
 
-	BOOL Succeed = FALSE, Restore;
+	BOOL Succeed = FALSE, Restore = FALSE;
 	LARGE_INTEGER OriginalOffset = { 0 }, ZeroOffset;
 
 	//申请一个Overlapped的上下文
@@ -149,7 +149,7 @@ Coroutine_WriteFile(
 		);
 	}
 
-	BOOL Succeed = FALSE, Restore;
+	BOOL Succeed = FALSE, Restore = FALSE;
 	LARGE_INTEGER OriginalOffset = { 0 }, ZeroOffset;
 
 	//申请一个Overlapped的上下文

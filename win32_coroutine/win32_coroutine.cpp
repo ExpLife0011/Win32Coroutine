@@ -29,6 +29,23 @@ WINAPI CoCompatRoutineHost(
 }
 
 /**
+ * 纤程函数执行宿主
+ */
+VOID
+WINAPI CoStandardRoutineHost(
+	LPVOID lpFiberParameter
+) {
+
+	//获取参数
+	PCOROUTINE_STANDARD_CALL StandardCall = (PCOROUTINE_STANDARD_CALL)lpFiberParameter;
+	StandardCall->FiberRoutine(StandardCall->Parameter);
+
+	free(StandardCall);
+
+	CoSyncExecute(TRUE);
+}
+
+/**
  * 手动进行协程调度
  */
 VOID
@@ -59,8 +76,27 @@ WINAPI CoScheduleRoutine(
 	//从TLS中获取协程实例
 	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)TlsGetValue(0);
 
-	//如果有完成的IO端口事件,优先继续执行
 DEAL_COMPLETED_IO:
+	//首先处理延时执行队列
+	while (!Instance->DelayExecutionList->empty()) {
+
+		//取出第一个事件，判断是否小于等于当前时间，是的话说明命中
+		PCOROUTINE_EXECUTE_DELAY ExecuteDelay = Instance->DelayExecutionList->front();
+		if (ExecuteDelay->TimeAtLeast > GetTickCount64())
+			break;
+
+		//弹出第一个事件并执行之
+		Instance->DelayExecutionList->pop_front();
+		SwitchToFiber(ExecuteDelay->Fiber);
+
+		//如果执行完毕
+		if (Instance->LastFiberFinished == TRUE) {
+			DeleteFiber(Victim);
+			Instance->LastFiberFinished = FALSE;
+		}
+	}
+
+	//随后处理Iocp的完成事件
 	while (GetQueuedCompletionStatus(Instance->Iocp, &ByteTransfered, &IoContext, &Overlapped, Timeout)) {
 		
 		PCOROUTINE_OVERLAPPED_WARPPER Context = (PCOROUTINE_OVERLAPPED_WARPPER)
@@ -76,24 +112,6 @@ DEAL_COMPLETED_IO:
 			DeleteFiber(Victim);
 			Instance->LastFiberFinished = FALSE;
 		}
-
-		/*
-		//判断延时执行队列是否为空
-		if (Instance->DelayExecutionList->empty())
-			continue;
-
-		//取出第一个事件，判断是否小于等于当前时间，是的话说明命中
-		PCOROUTINE_EXECUTE_DELAY ExecuteDelay = Instance->DelayExecutionList->front();
-		if (ExecuteDelay->TimeAtLeast <= GetTickCount64()) {
-			Instance->DelayExecutionList->pop_front();
-			SwitchToFiber(ExecuteDelay->Fiber);
-
-			if (Instance->LastFiberFinished == TRUE) {
-				DeleteFiber(Victim);
-				Instance->LastFiberFinished = FALSE;
-			}
-		}
-		*/
 	}
 
 	//继续执行因为其他原因打断的协程或者新的协程
@@ -169,6 +187,24 @@ CoInsertCompatRoutine(
 	return CoInsertRoutine(StackSize, CoCompatRoutineHost, CompatCall, Instance);
 }
 
+/**
+ * 创建一个普通的纤程
+ * 为了保证纤程对象能及时的回收，尽量调用这个接口
+ */
+BOOLEAN
+CoInsertStandardRoutine(
+	SIZE_T StackSize,
+	LPFIBER_START_ROUTINE StartRoutine,
+	LPVOID Parameter,
+	PCOROUTINE_INSTANCE Instance
+) {
+
+	PCOROUTINE_STANDARD_CALL StandardCall = (PCOROUTINE_STANDARD_CALL)malloc(sizeof(COROUTINE_STANDARD_CALL));
+	StandardCall->FiberRoutine = StartRoutine;
+	StandardCall->Parameter = Parameter;
+	
+	return CoInsertRoutine(StackSize, CoStandardRoutineHost, StandardCall, Instance);
+}
 
 /**
  * 纤程入口点
@@ -241,6 +277,27 @@ CoDelayExecutionAtLeast(
 	Instance->DelayExecutionList->insert(Iter--, DelayExecution);
 
 	return;
+}
+
+/**
+ * 手动启动调度
+ */
+BOOLEAN 
+CoStartCoroutineManually(
+) {
+
+	//从TLS中获取协程实例
+	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)TlsGetValue(0);
+	if (Instance == NULL)
+		return FALSE;
+
+	if (ConvertThreadToFiber(NULL) == NULL)
+		return FALSE;
+
+	SwitchToFiber(Instance->ScheduleRoutine);
+
+	//永不到达
+	return TRUE;
 }
 
 /**

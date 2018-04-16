@@ -5,10 +5,10 @@
 #include <compressapi.h>
 
 
-#pragma comment(lib,"Cabinet.lib")
+//#pragma comment(lib,"Cabinet.lib")
 #pragma comment(lib,"ws2_32.lib")
 
-#define TEST
+//#define TEST
 #define THREAD
 
 DWORD s;
@@ -30,7 +30,7 @@ WINAPI CoRoutine1(
 
 	PVOID CompressData;
 	
-	HANDLE g = CreateFile(L"F:\\test.iso", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
+	HANDLE g = CreateFile(L"G:\\1.DMP", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
 
 	for (int i = 0;i < COUNT;i++) {
 		SetFilePointer(g, 4096 * i, &Offset, FILE_BEGIN);
@@ -74,7 +74,7 @@ WINAPI CoRoutine2(
 
 	PVOID CompressData;
 
-	HANDLE g = CreateFile(L"F:\\test.iso", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
+	HANDLE g = CreateFile(L"G:\\1.DMP", GENERIC_ALL, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
 
 	for (int i = 0;i < COUNT;i++) {
 		SetFilePointer(g, 4096 * i, &Offset, FILE_BEGIN);
@@ -114,8 +114,12 @@ InitRoutine(
 
 	s = GetTickCount();
 	//test
-	CoInsertRoutine(0x1000, CoRoutine1, NULL, NULL);
-	CoInsertRoutine(0x1000, CoRoutine2, NULL, NULL);
+	for (int i = 0;i < 10000;i++) {
+		CoInsertRoutine(0x1000, CoRoutine1, NULL, NULL);
+	}
+	for (int i = 0;i < 10000;i++) {
+		CoInsertRoutine(0x1000, CoRoutine2, NULL, NULL);
+	}
 
 	CoSyncExecute(TRUE);
 }

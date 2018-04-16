@@ -7,6 +7,7 @@
 #include <mswsock.h>
 
 Routine_accept		System_accept;
+Routine_recv		System_recv;
 
 /**
  * 自定义的支持协程的accept
@@ -29,19 +30,7 @@ NATIVE_CALL:
 	LPFN_ACCEPTEX AcceptEx;
 	GUID GuidAcceptEx = WSAID_ACCEPTEX;
 	DWORD Bytes;
-
-	//申请一个Overlapped的上下文
-	PCOROUTINE_OVERLAPPED_WARPPER OverlappedWarpper = (PCOROUTINE_OVERLAPPED_WARPPER)malloc(sizeof(COROUTINE_OVERLAPPED_WARPPER));
-	if (OverlappedWarpper == NULL) {
-		goto ERROR_EXIT_2;
-	}
-	memset(OverlappedWarpper, 0, sizeof(COROUTINE_OVERLAPPED_WARPPER));
-
-	//申请接收缓存
-	OverlappedWarpper->AcceptBuffer = malloc((sizeof(sockaddr_in) + 16) * 2);
-	if (OverlappedWarpper->AcceptBuffer == NULL) {
-		goto ERROR_EXIT_2;
-	}
+	char AcceptBuffer[(sizeof(sockaddr_in) + 16) * 2];
 
 	//获取AccepteEx函数
 	Result = WSAIoctl(s, SIO_GET_EXTENSION_FUNCTION_POINTER,
@@ -49,38 +38,47 @@ NATIVE_CALL:
 		&AcceptEx, sizeof(AcceptEx),
 		&Bytes, NULL, NULL);
 	if (Result == SOCKET_ERROR) {
-		goto ERROR_EXIT_2;
+		goto NATIVE_CALL;
 	}
 
 	//创建一个接受SOCKET
 	AcceptSocket = socket(AF_INET, SOCK_STREAM, 0);
 	if (AcceptSocket == INVALID_SOCKET) {
-		goto ERROR_EXIT_2;
+		goto NATIVE_CALL;
 	}
 
 	//设置不可继承
 	if (!SetHandleInformation((HANDLE)AcceptSocket, HANDLE_FLAG_INHERIT, 0)) {
-		goto ERROR_EXIT_2;
+		closesocket(AcceptSocket);
+		goto NATIVE_CALL;
 	}
+
+	//申请一个Overlapped的上下文
+	PCOROUTINE_OVERLAPPED_WARPPER OverlappedWarpper = (PCOROUTINE_OVERLAPPED_WARPPER)malloc(sizeof(COROUTINE_OVERLAPPED_WARPPER));
+	if (OverlappedWarpper == NULL) {
+		closesocket(AcceptSocket);
+		goto NATIVE_CALL;
+	}
+	memset(OverlappedWarpper, 0, sizeof(COROUTINE_OVERLAPPED_WARPPER));
 
 	//接收
 	Result = AcceptEx(s,
 		AcceptSocket, 
-		OverlappedWarpper,
+		AcceptBuffer,
 		0,
 		sizeof(sockaddr_in) + 16,
 		sizeof(sockaddr_in) + 16,
 		&Bytes,
 		&OverlappedWarpper->Overlapped);
 	if (Result == FALSE) {
-		goto ERROR_EXIT_2;
+		goto ERROR_EXIT;
 	}
 
 	CoSyncExecute(FALSE);
 
 	//接受IO失败
 	if (OverlappedWarpper->ErrorCode != ERROR_SUCCESS) {
-		goto ERROR_EXIT_1;
+		goto ERROR_EXIT;
 	}
 
 	//新的SOCKET从旧的SOCKET继承属性
@@ -89,7 +87,7 @@ NATIVE_CALL:
 		SO_UPDATE_ACCEPT_CONTEXT,
 		(char*)s,
 		sizeof(s)) == 0) {
-		goto ERROR_EXIT_1;
+		goto ERROR_EXIT;
 	}
 
 	//获取目的地址信息
@@ -98,21 +96,53 @@ NATIVE_CALL:
 	free(OverlappedWarpper);
 	return AcceptSocket;
 
-ERROR_EXIT_1:
+ERROR_EXIT:
 	free(OverlappedWarpper);
 
 	closesocket(AcceptSocket);
 
 	return INVALID_SOCKET;
+}
 
-ERROR_EXIT_2:
-	if (OverlappedWarpper != NULL) {
+int
+PASCAL
+Coroutine_recv(
+	_In_ SOCKET s,
+	_Out_writes_bytes_to_(len, return) char FAR * buf,
+	_In_ int len,
+	_In_ int flags
+) {
+
+	if (!IsThreadAFiber()) {
+		return System_recv(s, buf, len, flags);
+	}
+
+	int Result;
+	WSABUF WsaBuf;
+
+	//申请一个Overlapped的上下文
+	PCOROUTINE_OVERLAPPED_WARPPER OverlappedWarpper = (PCOROUTINE_OVERLAPPED_WARPPER)malloc(sizeof(COROUTINE_OVERLAPPED_WARPPER));
+	if (OverlappedWarpper == NULL) {
+		WSASetLastError(ERROR_NOT_ENOUGH_MEMORY);
+		return 0;
+	}
+	
+	//异步接受
+	WsaBuf.buf = buf;
+	WsaBuf.len = len;
+	Result = WSARecv(s, &WsaBuf, 1, NULL, 0, &OverlappedWarpper->Overlapped, NULL);
+	if ((Result !=SOCKET_ERROR)||(WSAGetLastError()!=WSA_IO_PENDING)) { 
 		free(OverlappedWarpper);
+		return 0;
 	}
 
-	if (AcceptSocket) {
-		closesocket(AcceptSocket);
-	}
+	CoSyncExecute(FALSE);
 
-	goto NATIVE_CALL;
+	//设置结果
+	WSASetLastError(OverlappedWarpper->ErrorCode);
+	Result = OverlappedWarpper->BytesTransfered;
+
+	free(OverlappedWarpper);
+
+	return Result;
 }

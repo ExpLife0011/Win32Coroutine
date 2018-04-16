@@ -53,10 +53,10 @@ BOOL
 	_Inout_opt_ LPOVERLAPPED lpOverlapped
 );
 
-extern Routine_CreateFileW System_CreateFileW;
-extern Routine_ReadFile System_ReadFile;
-extern Routine_WriteFile System_WriteFile;
-extern Routine_DeviceIoControl System_DeviceIoControl;
+extern Routine_CreateFileW		System_CreateFileW;
+extern Routine_ReadFile			System_ReadFile;
+extern Routine_WriteFile		System_WriteFile;
+extern Routine_DeviceIoControl	System_DeviceIoControl;
 
 //------------------------------------//
 //-------------netio函数--------------//
@@ -109,6 +109,9 @@ int
 	_In_reads_bytes_opt_(tolen) const struct sockaddr FAR *to,
 	_In_ int tolen
 	);
+
+extern Routine_accept		System_accept;
+extern Routine_recv			System_recv;
 
 /**
  * 自定义的支持协程的CreateFileW
