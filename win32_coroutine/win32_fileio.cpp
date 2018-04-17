@@ -6,6 +6,7 @@ Routine_CreateFileW		System_CreateFileW;
 Routine_ReadFile		System_ReadFile;
 Routine_WriteFile		System_WriteFile;
 Routine_DeviceIoControl System_DeviceIoControl;
+
 /**
  * 自定义的支持协程的CreateFileW
  */
@@ -73,7 +74,7 @@ Coroutine_ReadFile(
 		);
 	}
 
-	BOOL Succeed = FALSE, Restore;
+	BOOL Succeed = FALSE, Restore = FALSE;
 	LARGE_INTEGER OriginalOffset = { 0 }, ZeroOffset;
 
 	//申请一个Overlapped的上下文
@@ -94,6 +95,7 @@ Coroutine_ReadFile(
 	OverlappedWarpper->Overlapped.Offset = OriginalOffset.LowPart;
 	OverlappedWarpper->Overlapped.OffsetHigh = OriginalOffset.HighPart;
 	OverlappedWarpper->Fiber = GetCurrentFiber();
+	OverlappedWarpper->AsioType = ASIO_FILE;
 
 	if (Restore) {
 		SetFilePointerEx(hFile, OriginalOffset, &OriginalOffset, FILE_BEGIN);
@@ -110,7 +112,7 @@ Coroutine_ReadFile(
 	}
 
 	//手动调度纤程
-	CoSyncExecute(FALSE);
+	CoYield(FALSE);
 	
 	SetLastError(OverlappedWarpper->ErrorCode);
 	if (OverlappedWarpper->ErrorCode != ERROR_SUCCESS) {
@@ -149,7 +151,7 @@ Coroutine_WriteFile(
 		);
 	}
 
-	BOOL Succeed = FALSE, Restore;
+	BOOL Succeed = FALSE, Restore = FALSE;
 	LARGE_INTEGER OriginalOffset = { 0 }, ZeroOffset;
 
 	//申请一个Overlapped的上下文
@@ -159,7 +161,7 @@ Coroutine_WriteFile(
 		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
 		return FALSE;
 	}
-	memset(OverlappedWarpper, 0, sizeof(OverlappedWarpper));
+	memset(OverlappedWarpper, 0, sizeof(COROUTINE_OVERLAPPED_WARPPER));
 
 	ZeroOffset.QuadPart = 0;
 
@@ -170,6 +172,7 @@ Coroutine_WriteFile(
 	OverlappedWarpper->Overlapped.Offset = OriginalOffset.LowPart;
 	OverlappedWarpper->Overlapped.OffsetHigh = OriginalOffset.HighPart;
 	OverlappedWarpper->Fiber = GetCurrentFiber();
+	OverlappedWarpper->AsioType = ASIO_FILE;
 
 	if (Restore) {
 		SetFilePointerEx(hFile, OriginalOffset, &OriginalOffset, FILE_BEGIN);
@@ -186,7 +189,7 @@ Coroutine_WriteFile(
 	}
 
 	//手动调度纤程
-	CoSyncExecute(FALSE);
+	CoYield(FALSE);
 
 	SetLastError(OverlappedWarpper->ErrorCode);
 	if (OverlappedWarpper->ErrorCode != ERROR_SUCCESS) {
@@ -240,9 +243,10 @@ Coroutine_DeviceIoControl(
 		SetLastError(ERROR_NOT_ENOUGH_MEMORY);
 		return FALSE;
 	}
-	memset(OverlappedWarpper, 0, sizeof(OverlappedWarpper));
+	memset(OverlappedWarpper, 0, sizeof(COROUTINE_OVERLAPPED_WARPPER));
 
 	OverlappedWarpper->Fiber = GetCurrentFiber();
+	OverlappedWarpper->AsioType = ASIO_FILE;
 
 	Succeed = System_DeviceIoControl(hDevice,
 		dwIoControlCode,
@@ -258,7 +262,7 @@ Coroutine_DeviceIoControl(
 	}
 
 	//手动调度纤程
-	CoSyncExecute(FALSE);
+	CoYield(FALSE);
 
 	SetLastError(OverlappedWarpper->ErrorCode);
 	if (OverlappedWarpper->ErrorCode != ERROR_SUCCESS) {

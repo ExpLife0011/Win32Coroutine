@@ -85,9 +85,42 @@ HookCallInIat(
 );
 
 /**
- * 对Win32API进行hook
+ * Hook一个调用
+ * @param	Module			调用所在的模块基址
+ * @param	Import			导入模块目录项
+ * @param	RoutineName		导入函数名
+ * @param	NewRoutine		新的函数地址
+ */
+PVOID
+HookSingleCall(
+	HMODULE Module,
+	PIMAGE_IMPORT_DESCRIPTOR Import,
+	PSTR RoutineName,
+	PVOID NewRoutine
+);
+
+/**
+ * 对文件IO函数进行hook
+ * 包括：
+ *	CreateFileW
+ *	ReadFile
+ *	WriteFile
+ *	DeviceIoControl
  */
 BOOLEAN
-CoSetupWin32ApiHook(
+CoSetupFileIoHook(
+	PWSTR ModuleName
+);
+
+/**
+ * 对socket函数进行hook
+ * 包括：
+ *	socket
+ *	accept
+ *	send
+ *	recv
+ */
+BOOLEAN
+CoSetupNetIoHook(
 	PWSTR ModuleName
 );

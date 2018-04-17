@@ -8,13 +8,18 @@
 
 #define PERF_TEST
 
+#define ASIO_FILE		1
+#define ASIO_NET		2
+
 //重叠对象扩展结构
 typedef struct _COROUTINE_OVERLAPPED_WARPPER {
+	DWORD Signature;
 	OVERLAPPED Overlapped;
 	DWORD BytesTransfered;
 	DWORD ErrorCode;
+	DWORD AsioType;
 	PVOID Fiber;
-	PVOID AcceptBuffer;
+	HANDLE Handle;
 }COROUTINE_OVERLAPPED_WARPPER, *PCOROUTINE_OVERLAPPED_WARPPER;
 
 //兼容线程格式的纤程调用
@@ -22,6 +27,12 @@ typedef struct _COROUTINE_COMPAT_CALL {
 	LPTHREAD_START_ROUTINE CompatRoutine;
 	LPVOID Parameter;
 }COROUTINE_COMPAT_CALL, *PCOROUTINE_COMPAT_CALL;
+
+//标准格式的纤程调用
+typedef struct _COROUTINE_STANDARD_CALL {
+	LPFIBER_START_ROUTINE FiberRoutine;
+	LPVOID Parameter;
+}COROUTINE_STANDARD_CALL, *PCOROUTINE_STANDARD_CALL;
 
 //延时执行对象
 typedef struct _COROUTINE_EXECUTE_DELAY {
@@ -66,7 +77,7 @@ typedef struct _COROUTINE_INSTANCE {
  * 手动进行协程调度
  */
 VOID
-CoSyncExecute(
+CoYield(
 	BOOLEAN Terminate
 );
 
@@ -90,6 +101,37 @@ CoInsertCompatRoutine(
 	LPTHREAD_START_ROUTINE StartRoutine,
 	LPVOID Parameter,
 	PCOROUTINE_INSTANCE Instance
+);
+
+/**
+ * 创建一个普通的纤程
+ * 为了保证纤程对象能及时的回收，尽量调用这个接口
+ */
+BOOLEAN
+CoInsertStandardRoutine(
+	SIZE_T StackSize,
+	LPFIBER_START_ROUTINE StartRoutine,
+	LPVOID Parameter,
+	PCOROUTINE_INSTANCE Instance
+);
+
+/**
+ * 添加一个延时执行事件
+ * @param	Fiber			协程
+ * @param	MillionSecond	延时毫秒数
+ * @note	由于协程不是基于时间片调度，这个函数只能延时最小时间，往往可能会比这个时间要长
+ */
+VOID
+CoDelayExecutionAtLeast(
+	PVOID Fiber,
+	DWORD MillionSecond
+);
+
+/**
+ * 手动启动调度
+ */
+BOOLEAN
+CoStartCoroutineManually(
 );
 
 /**
