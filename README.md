@@ -1,6 +1,5 @@
 # Win32Coroutine  
-Win32ÏÂµÄÐ­³ÌÊµÏÖ£¬»ùÓÚWindowsµÄFiberÊµÏÖ£¬¶îÍâÐÞ¸ÄÁË¼¸¸öIOº¯ÊýÒÔÊµÏÖ·ÇÇÖÈëµÄÍ¬²½´úÂëÒì²½ÊµÏÖ¡£  
-¿¼ÂÇµ½´óÁ¿Ð­³ÌÏÂ¿ÉÄÜµ¼ÖÂÕ»¿Õ¼ä²»¹»£¬×¼±¸ÓÅ»¯Õâµã£¨¸Ð¾õFiber±¾ÉíÍ¦ºÃµÄ£¬¿ÉÄÜ¾Í¸ÄFiberµÄAPI£¬emmmm¡£¡£¡££©£¬ÔÝÊ±²»ÔÙÌí¼ÓÐÂµÄAPI¹Ò¹³¡£  
+Win32ÏÂµÄÐ­³ÌÊµÏÖ£¬»ùÓÚWindowsµÄFiberÊµÏÖ£¬¶îÍâÐÞ¸ÄÁË¼¸¸öIOº¯ÊýÒÔÊµÏÖ·ÇÇÖÈëµÄÍ¬²½´úÂëÒì²½ÊµÏÖ¡£    
 **ÊµÏÖÔ­Àí£º**  
 ²Î¿¼ÁËlibco£¬ÐÞ¸ÄIAT¹Ò¹³ÁË°üÀ¨ÎÄ¼þIO£¬ÍøÂçIOºÍ¹ÜµÀIOÔÚÄÚµÄÒ»ÏµÁÐÖ§³Ö×èÈûIOµÄAPI£¬ÔÚÄÚ²¿½«Æä×ª»»ÎªÍê³É¶Ë¿Úµ÷ÓÃ£¬²¢Í¨¹ýµ÷¶ÈÐ­³ÌÊµÏÖ·Ç×èÈûIO¡£ Ð­³Ì±¾ÉíµÄÉÏÏÂÎÄÇÐ»»ÊÇ½èÖúÓÚWindowsµÄFiberÊµÏÖµÄ¡£  
 **ÓÅÊÆ**
@@ -18,8 +17,10 @@ Win32ÏÂµÄÐ­³ÌÊµÏÖ£¬»ùÓÚWindowsµÄFiberÊµÏÖ£¬¶îÍâÐÞ¸ÄÁË¼¸¸öIOº¯ÊýÒÔÊµÏÖ·ÇÇÖÈëµÄÍ¬²
  - ReadFile
  - WriteFile
  - DeviceIoControl
+ - socket
  - accept
  - recv
+ - send
 
  **ÐÔÄÜ±È½Ï**
  Ë³Ðò×èÈû¶ÁÈ¡ÎÄ¼þºÍÐ­³ÌÒì²½¶ÁÈ¡ÎÄ¼þµÄÐÔÄÜ¶Ô±È£º

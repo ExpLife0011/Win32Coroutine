@@ -3,13 +3,170 @@
 
 #include "stdafx.h"
 #include "windows.h"
+#include <ntstatus.h>
 #include <list>
 
 #include "win32_hook.h"
 #include "win32_sysroutine.h"
 #include "win32_coroutine.h"
 
+typedef DWORD NTSTATUS;
+
 using namespace std;
+
+SIZE_T Co_SystemPageSize = 4096;
+SIZE_T Co_ProcessorCount;
+
+typedef
+ULONG 
+(WINAPI* LpfnRtlNtStatusToDosError)(
+	_In_ NTSTATUS Status
+);
+
+LpfnRtlNtStatusToDosError RtlNtStatusToDosError = NULL;
+
+/**
+ * 将NT错误码转换为Winsock错误码
+ * 从libuv抄过来的
+ * @param	status	Nt错误码
+ */
+DWORD
+CoNtatusToWinsockError(
+	NTSTATUS Status
+) {
+	switch (Status) {
+	case STATUS_SUCCESS:
+		return ERROR_SUCCESS;
+
+	case STATUS_PENDING:
+		return ERROR_IO_PENDING;
+
+	case STATUS_INVALID_HANDLE:
+	case STATUS_OBJECT_TYPE_MISMATCH:
+		return WSAENOTSOCK;
+
+	case STATUS_INSUFFICIENT_RESOURCES:
+	case STATUS_PAGEFILE_QUOTA:
+	case STATUS_COMMITMENT_LIMIT:
+	case STATUS_WORKING_SET_QUOTA:
+	case STATUS_NO_MEMORY:
+	case STATUS_QUOTA_EXCEEDED:
+	case STATUS_TOO_MANY_PAGING_FILES:
+	case STATUS_REMOTE_RESOURCES:
+		return WSAENOBUFS;
+
+	case STATUS_TOO_MANY_ADDRESSES:
+	case STATUS_SHARING_VIOLATION:
+	case STATUS_ADDRESS_ALREADY_EXISTS:
+		return WSAEADDRINUSE;
+
+	case STATUS_LINK_TIMEOUT:
+	case STATUS_IO_TIMEOUT:
+	case STATUS_TIMEOUT:
+		return WSAETIMEDOUT;
+
+	case STATUS_GRACEFUL_DISCONNECT:
+		return WSAEDISCON;
+
+	case STATUS_REMOTE_DISCONNECT:
+	case STATUS_CONNECTION_RESET:
+	case STATUS_LINK_FAILED:
+	case STATUS_CONNECTION_DISCONNECTED:
+	case STATUS_PORT_UNREACHABLE:
+	case STATUS_HOPLIMIT_EXCEEDED:
+		return WSAECONNRESET;
+
+	case STATUS_LOCAL_DISCONNECT:
+	case STATUS_TRANSACTION_ABORTED:
+	case STATUS_CONNECTION_ABORTED:
+		return WSAECONNABORTED;
+
+	case STATUS_BAD_NETWORK_PATH:
+	case STATUS_NETWORK_UNREACHABLE:
+	case STATUS_PROTOCOL_UNREACHABLE:
+		return WSAENETUNREACH;
+
+	case STATUS_HOST_UNREACHABLE:
+		return WSAEHOSTUNREACH;
+
+	case STATUS_CANCELLED:
+	case STATUS_REQUEST_ABORTED:
+		return WSAEINTR;
+
+	case STATUS_BUFFER_OVERFLOW:
+	case STATUS_INVALID_BUFFER_SIZE:
+		return WSAEMSGSIZE;
+
+	case STATUS_BUFFER_TOO_SMALL:
+	case STATUS_ACCESS_VIOLATION:
+		return WSAEFAULT;
+
+	case STATUS_DEVICE_NOT_READY:
+	case STATUS_REQUEST_NOT_ACCEPTED:
+		return WSAEWOULDBLOCK;
+
+	case STATUS_INVALID_NETWORK_RESPONSE:
+	case STATUS_NETWORK_BUSY:
+	case STATUS_NO_SUCH_DEVICE:
+	case STATUS_NO_SUCH_FILE:
+	case STATUS_OBJECT_PATH_NOT_FOUND:
+	case STATUS_OBJECT_NAME_NOT_FOUND:
+	case STATUS_UNEXPECTED_NETWORK_ERROR:
+		return WSAENETDOWN;
+
+	case STATUS_INVALID_CONNECTION:
+		return WSAENOTCONN;
+
+	case STATUS_REMOTE_NOT_LISTENING:
+	case STATUS_CONNECTION_REFUSED:
+		return WSAECONNREFUSED;
+
+	case STATUS_PIPE_DISCONNECTED:
+		return WSAESHUTDOWN;
+
+	case STATUS_CONFLICTING_ADDRESSES:
+	case STATUS_INVALID_ADDRESS:
+	case STATUS_INVALID_ADDRESS_COMPONENT:
+		return WSAEADDRNOTAVAIL;
+
+	case STATUS_NOT_SUPPORTED:
+	case STATUS_NOT_IMPLEMENTED:
+		return WSAEOPNOTSUPP;
+
+	case STATUS_ACCESS_DENIED:
+		return WSAEACCES;
+
+	default:
+		if ((Status & (FACILITY_NTWIN32 << 16)) == (FACILITY_NTWIN32 << 16) &&
+			(Status & (ERROR_SEVERITY_ERROR | ERROR_SEVERITY_WARNING))) {
+			/* It's a windows error that has been previously mapped to an */
+			/* ntstatus code. */
+			return (DWORD)(Status & 0xffff);
+		}
+		else {
+			/* The default fallback for unmappable ntstatus codes. */
+			return WSAEINVAL;
+		}
+	}
+}
+
+/**
+ * 获取动态导入
+ * @param	LibName		模块名
+ * @param	RoutineName	函数名
+ */
+PVOID
+CoGetDynamicImportRoutine(
+	LPSTR LibName,
+	LPSTR RoutineName
+) {
+
+	HMODULE Module = GetModuleHandleA(LibName);
+	if (Module == NULL)
+		return NULL;
+
+	return GetProcAddress(Module, RoutineName);
+}
 
 /**
  * 线程函数执行宿主
@@ -19,13 +176,26 @@ WINAPI CoCompatRoutineHost(
 	LPVOID lpFiberParameter
 ) {
 
+	DWORD StackSize;
 	//获取参数
 	PCOROUTINE_COMPAT_CALL CompatCall = (PCOROUTINE_COMPAT_CALL)lpFiberParameter;
-	CompatCall->CompatRoutine(CompatCall->Parameter);
+
+	__try {
+		CompatCall->CompatRoutine(CompatCall->Parameter);
+	}
+	__except (GetExceptionCode() == EXCEPTION_STACK_OVERFLOW) {
+
+		//获取当前栈大小并调整
+		if (SetThreadStackGuarantee(&StackSize)) {
+			StackSize += Co_SystemPageSize;
+			SetThreadStackGuarantee(&StackSize);
+			_resetstkoflw();
+		}
+	}
 
 	free(CompatCall);
 
-	CoSyncExecute(TRUE);
+	CoYield(TRUE);
 }
 
 /**
@@ -36,20 +206,33 @@ WINAPI CoStandardRoutineHost(
 	LPVOID lpFiberParameter
 ) {
 
+	DWORD StackSize;
 	//获取参数
 	PCOROUTINE_STANDARD_CALL StandardCall = (PCOROUTINE_STANDARD_CALL)lpFiberParameter;
-	StandardCall->FiberRoutine(StandardCall->Parameter);
+
+	__try {
+		StandardCall->FiberRoutine(StandardCall->Parameter);
+	}
+	__except (GetExceptionCode() == EXCEPTION_STACK_OVERFLOW) {
+
+		//获取当前栈大小并调整
+		if (SetThreadStackGuarantee(&StackSize)) {
+			StackSize += Co_SystemPageSize;
+			SetThreadStackGuarantee(&StackSize);
+			_resetstkoflw();
+		}
+	}
 
 	free(StandardCall);
 
-	CoSyncExecute(TRUE);
+	CoYield(TRUE);
 }
 
 /**
  * 手动进行协程调度
  */
 VOID
-CoSyncExecute(
+CoYield(
 	BOOLEAN Terminate
 ) {
 
@@ -72,6 +255,8 @@ WINAPI CoScheduleRoutine(
 	LPOVERLAPPED Overlapped;
 	DWORD Timeout = 0;
 	PVOID Victim;
+	DWORD TransBytes;
+	DWORD Flags;
 
 	//从TLS中获取协程实例
 	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)TlsGetValue(0);
@@ -102,7 +287,16 @@ DEAL_COMPLETED_IO:
 		PCOROUTINE_OVERLAPPED_WARPPER Context = (PCOROUTINE_OVERLAPPED_WARPPER)
 			CONTAINING_RECORD(Overlapped, COROUTINE_OVERLAPPED_WARPPER, Overlapped);
 		Context->BytesTransfered = ByteTransfered;
-		Context->ErrorCode = GetLastError();
+		
+		//libuv是这样处理错误的
+		if (Context->AsioType == ASIO_FILE) {
+			if (RtlNtStatusToDosError == NULL)
+				RtlNtStatusToDosError = (LpfnRtlNtStatusToDosError)CoGetDynamicImportRoutine("ntdll.dll", "RtlNtStatusToDosError");
+			Context->ErrorCode = RtlNtStatusToDosError((NTSTATUS)Context->Overlapped.Internal);
+		}
+		else if (Context->AsioType == ASIO_NET) {
+			Context->ErrorCode = CoNtatusToWinsockError((NTSTATUS)Context->Overlapped.Internal);
+		}
 
 		//这个结构可能在协程执行中被释放了
 		Victim = Context->Fiber;
@@ -140,6 +334,8 @@ DEAL_COMPLETED_IO:
 
 /**
  * 创建一个协程
+ * 事实上调试发现，StackSize无论指定多少，只要栈空间不够，系统会
+ * 自动申请新的栈空间，而不会触发异常，所以这个值建议取值和PageSize一样
  */
 BOOLEAN
 CoInsertRoutine(
@@ -159,7 +355,7 @@ CoInsertRoutine(
 		return FALSE;
 
 	//创建一个Coroutine
-	PVOID NewFiber = CreateFiber(StackSize, StartRoutine, Parameter);
+	PVOID NewFiber = CreateFiberEx(Co_SystemPageSize, StackSize, 0, StartRoutine, Parameter);
 	if (NewFiber == NULL)
 		return FALSE;
 
@@ -203,6 +399,10 @@ CoInsertStandardRoutine(
 	StandardCall->FiberRoutine = StartRoutine;
 	StandardCall->Parameter = Parameter;
 	
+	//堆栈至少一个页面
+	if (StackSize < Co_SystemPageSize)
+		StackSize = Co_SystemPageSize;
+
 	return CoInsertRoutine(StackSize, CoStandardRoutineHost, StandardCall, Instance);
 }
 
@@ -220,7 +420,8 @@ CoThreadEntryPoint(
 
 	ConvertThreadToFiber(NULL);
 	
-	Instance->ScheduleRoutine = CreateFiber(0x1000, CoScheduleRoutine, NULL);
+	//创建协程入口点
+	Instance->ScheduleRoutine = CreateFiber(Co_SystemPageSize, CoScheduleRoutine, NULL);
 	if (Instance->ScheduleRoutine == NULL)
 		return 0;
 
@@ -315,6 +516,10 @@ CoCreateCoroutine(
 	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)malloc(sizeof(COROUTINE_INSTANCE));
 	DWORD ThreadId;
 
+	if (Instance == NULL)
+		return NULL;
+	memset(Instance, 0, sizeof(Instance));
+
 	//创建线程相关的IO完成端口
 	Instance->Iocp= CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 	if (Instance->Iocp == NULL)
@@ -323,7 +528,9 @@ CoCreateCoroutine(
 	//创建协程调度队列
 	Instance->FiberList = new list<void*>;
 	Instance->DelayExecutionList = new list<PCOROUTINE_EXECUTE_DELAY>;
-	Instance->InitialRoutine = CreateFiber(StackSize, InitRoutine, Parameter);
+	Instance->InitialRoutine = CreateFiberEx(StackSize, 0x1000, 0, InitRoutine, Parameter);
+	if (Instance->InitialRoutine == NULL)
+		goto ERROR_EXIT;
 
 	if (NewThread) {
 
@@ -338,7 +545,8 @@ CoCreateCoroutine(
 		//如果不创建新线程，这里只是初始化，需要手动开始调度
 		TlsSetValue(0, Instance);
 
-		Instance->ScheduleRoutine = CreateFiber(0x1000, CoScheduleRoutine, NULL);
+		//创建协程入口点
+		Instance->ScheduleRoutine = CreateFiber(Co_SystemPageSize, CoScheduleRoutine, NULL);
 		if (Instance->ScheduleRoutine == NULL)
 			goto ERROR_EXIT;
 
@@ -351,9 +559,19 @@ ERROR_EXIT:
 	if (Instance->Iocp)
 		CloseHandle(Instance->Iocp);
 
+	if (Instance->InitialRoutine)
+		DeleteFiber(Instance->InitialRoutine);
+
 	free(Instance);
 	return NULL;
 }
 
+/**
+ * 初始化协程库
+ */
+VOID
+CoInitialize(
+) {
 
-
+	return;
+}

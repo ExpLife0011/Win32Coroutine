@@ -63,8 +63,16 @@ extern Routine_DeviceIoControl	System_DeviceIoControl;
 //------------------------------------//
 
 typedef
+SOCKET
+(WSAAPI* Routine_socket)(
+	_In_ int af,
+	_In_ int type,
+	_In_ int protocol
+);
+
+typedef
 SOCKET 
-(PASCAL FAR* Routine_accept)(
+(WSAAPI* Routine_accept)(
 	_In_ SOCKET s,
 	_Out_writes_bytes_opt_(*addrlen) struct sockaddr FAR *addr,
 	_Inout_opt_ int FAR *addrlen
@@ -72,7 +80,7 @@ SOCKET
 
 typedef
 int 
-(PASCAL* Routine_recv)(
+(WSAAPI* Routine_recv)(
 	_In_ SOCKET s,
 	_Out_writes_bytes_to_(len, return) __out_data_source(NETWORK) char FAR * buf,
 	_In_ int len,
@@ -81,7 +89,7 @@ int
 
 typedef
 int
-(PASCAL FAR* Routine_recvfrom)(
+(WSAAPI* Routine_recvfrom)(
 	_In_ SOCKET s,
 	_Out_writes_bytes_to_(len, return) __out_data_source(NETWORK) char FAR * buf,
 	_In_ int len,
@@ -92,7 +100,7 @@ int
 
 typedef
 int 
-(PASCAL FAR* Routine_send)(
+(WSAAPI* Routine_send)(
 	_In_ SOCKET s,
 	_In_reads_bytes_(len) const char FAR * buf,
 	_In_ int len,
@@ -101,7 +109,7 @@ int
 
 typedef
 int 
-(PASCAL FAR* Routine_sendto)(
+(WSAAPI* Routine_sendto)(
 	_In_ SOCKET s,
 	_In_reads_bytes_(len) const char FAR * buf,
 	_In_ int len,
@@ -112,6 +120,8 @@ int
 
 extern Routine_accept		System_accept;
 extern Routine_recv			System_recv;
+extern Routine_send			System_send;
+extern Routine_socket		System_socket;
 
 /**
  * 自定义的支持协程的CreateFileW
@@ -171,12 +181,47 @@ Coroutine_DeviceIoControl(
 );
 
 /**
+ * 自定义的支持协程的socket
+ */
+SOCKET
+WSAAPI
+Coroutine_socket(
+	_In_ int af,
+	_In_ int type,
+	_In_ int protocol
+);
+
+/**
  * 自定义的支持协程的accept
  */
 SOCKET
-PASCAL FAR
+WSAAPI
 Coroutine_accept(
 	_In_ SOCKET s,
 	_Out_writes_bytes_opt_(*addrlen) struct sockaddr FAR *addr,
 	_Inout_opt_ int FAR *addrlen
+);
+
+/**
+ * 自定义的支持协程的recv
+ */
+int
+WSAAPI
+Coroutine_recv(
+	_In_ SOCKET s,
+	_Out_writes_bytes_to_(len, return) char FAR * buf,
+	_In_ int len,
+	_In_ int flags
+);
+
+/**
+ * 自定义的支持协程的send
+ */
+int
+WSAAPI
+Coroutine_send(
+	_In_ SOCKET s,
+	_In_reads_bytes_(len) const char FAR * buf,
+	_In_ int len,
+	_In_ int flags
 );

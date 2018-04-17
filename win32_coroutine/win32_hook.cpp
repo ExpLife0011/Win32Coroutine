@@ -85,6 +85,38 @@ PeGetModuleImportEntry(
 }
 
 /**
+ * 获取序号导入对应的实际函数名称
+ * @param	Module		模块基址
+ * @param	Import		导入目录
+ * @param	RoutineName	导入函数
+ */
+PCHAR
+PeGetOrdinalImportName(
+	HMODULE Module,
+	PIMAGE_IMPORT_DESCRIPTOR Import,
+	DWORD Ordinal
+) {
+
+	HMODULE BaseAddress = GetModuleHandleA((PSTR)Module + Import->Name);
+	if (BaseAddress == NULL)
+		return NULL;
+
+	PIMAGE_EXPORT_DIRECTORY Export = PeGetModuleExportDirectory(BaseAddress);
+	if (Ordinal > Export->NumberOfFunctions)
+		return NULL;
+	
+	PDWORD NameTable = (PDWORD)((PUCHAR)BaseAddress + Export->AddressOfNames);
+	PUSHORT OrdinalTable = (PUSHORT)((PUCHAR)BaseAddress + Export->AddressOfNameOrdinals);
+
+	for (int i = 0;i < Export->NumberOfNames;i++) {
+		if (OrdinalTable[i] == Ordinal - Export->Base)
+			return (PCHAR)BaseAddress + NameTable[i];
+	}
+
+	return NULL;
+}
+
+/**
  * 获取名称导入在导入表中的索引
  * @param	Module		模块基址
  * @param	Import		导入目录
@@ -97,17 +129,25 @@ PeGetNameImportIndex(
 	PSTR RoutineName
 ) {
 
+	PCHAR Name;
 	ULONG Index = 0;
 	PIMAGE_THUNK_DATA TrunkData = (PIMAGE_THUNK_DATA)((PUCHAR)Module + Import->OriginalFirstThunk);
 	while (TrunkData->u1.AddressOfData != 0) {
 
-		if (((LONG)TrunkData->u1.AddressOfData) < 0) {
-			Index++;
-			continue;
+#ifdef _WIN64
+		if (TrunkData->u1.AddressOfData & 0x8000000000000000) {
+			Name = PeGetOrdinalImportName(Module, Import, TrunkData->u1.AddressOfData & (0x8000000000000000 - 1));
 		}
-
-		PIMAGE_IMPORT_BY_NAME ImportByName = (PIMAGE_IMPORT_BY_NAME)((PUCHAR)Module + TrunkData->u1.AddressOfData);
-		if (strcmp(RoutineName, ImportByName->Name) == 0)
+#else
+		if (TrunkData->u1.AddressOfData & 0x80000000) {
+			Name = PeGetOrdinalImportName(Module, Import, TrunkData->u1.AddressOfData & (0x8000000 - 1));
+		}
+#endif
+		else {
+			PIMAGE_IMPORT_BY_NAME ImportByName = (PIMAGE_IMPORT_BY_NAME)((PUCHAR)Module + TrunkData->u1.AddressOfData);
+			Name = ImportByName->Name;
+		}
+		if (strcmp(RoutineName, Name) == 0)
 			return Index;
 
 		Index++;
@@ -184,10 +224,15 @@ HookSingleCall(
 }
 
 /**
- * 对Win32API进行hook
+ * 对文件IO函数进行hook
+ * 包括：
+ *	CreateFileW
+ *	ReadFile
+ *	WriteFile
+ *	DeviceIoControl
  */
 BOOLEAN
-CoSetupWin32ApiHook(
+CoSetupFileIoHook(
 	PWSTR ModuleName
 ) {
 
@@ -209,6 +254,44 @@ CoSetupWin32ApiHook(
 
 		//挂钩DeviceIoControl
 		System_DeviceIoControl = (Routine_DeviceIoControl)HookSingleCall(ImageBase, Import, "DeviceIoControl", Coroutine_DeviceIoControl);
+	}
+
+
+	return TRUE;
+}
+
+/**
+ * 对socket函数进行hook
+ * 包括：
+ *	socket
+ *	accept
+ *	send
+ *	recv
+ */
+BOOLEAN
+CoSetupNetIoHook(
+	PWSTR ModuleName
+) {
+
+	HMODULE ImageBase = GetModuleHandleW(ModuleName);
+
+	PIMAGE_IMPORT_DESCRIPTOR Import = PeGetModuleImportEntry(ImageBase, "Ws2_32.dll");
+	if (Import == NULL)
+		return FALSE;
+
+	//挂钩socket
+	System_socket = (Routine_socket)HookSingleCall(ImageBase, Import, "socket", Coroutine_socket);
+	if (System_socket) {
+
+		//挂钩accept
+		System_accept = (Routine_accept)HookSingleCall(ImageBase, Import, "accept", Coroutine_accept);
+
+		//挂钩send
+		System_send = (Routine_send)HookSingleCall(ImageBase, Import, "send", Coroutine_send);
+
+		//挂钩recv
+		System_recv = (Routine_recv)HookSingleCall(ImageBase, Import, "recv", Coroutine_recv);
+
 	}
 
 	return TRUE;
