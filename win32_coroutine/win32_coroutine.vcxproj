@@ -149,6 +149,7 @@
     <ClInclude Include="targetver.h" />
     <ClInclude Include="win32_coroutine.h" />
     <ClInclude Include="win32_hook.h" />
+    <ClInclude Include="win32_queue.h" />
     <ClInclude Include="win32_sysroutine.h" />
   </ItemGroup>
   <ItemGroup>
@@ -158,8 +159,10 @@
     <ClCompile Include="win32_coroutine.cpp" />
     <ClCompile Include="win32_hook.cpp" />
     <ClCompile Include="win32_fileio.cpp" />
+    <ClCompile Include="win32_message_queue.cpp" />
     <ClCompile Include="win32_pipe.cpp" />
     <ClCompile Include="win32_netio.cpp" />
+    <ClCompile Include="win32_queue.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\images\1.jpg" />
