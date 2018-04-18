@@ -256,7 +256,6 @@ InitRoutine(
 	//}
 	CoInsertStandardRoutine(0x1000, NetServerTest, NULL, NULL);
 
-	CoYield(TRUE);
 }
 
 int main()
@@ -264,8 +263,10 @@ int main()
 
 	Event = CreateEvent(NULL, FALSE, FALSE, NULL);
 
+	CoInitialize();
+
 #ifdef THREAD
-	CoSetupWin32ApiHook(NULL);
+	CoSetupNetIoHook(NULL);
 	HANDLE CoHandle = CoCreateCoroutine(0x1000, InitRoutine, NULL, TRUE);
 
 	WaitForSingleObject(Event, INFINITE);

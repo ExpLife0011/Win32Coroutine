@@ -24,14 +24,14 @@ typedef struct _COROUTINE_OVERLAPPED_WARPPER {
 
 //兼容线程格式的纤程调用
 typedef struct _COROUTINE_COMPAT_CALL {
-	LPTHREAD_START_ROUTINE CompatRoutine;
-	LPVOID Parameter;
+	LPTHREAD_START_ROUTINE UserRoutine;
+	LPVOID UserParameter;
 }COROUTINE_COMPAT_CALL, *PCOROUTINE_COMPAT_CALL;
 
 //标准格式的纤程调用
 typedef struct _COROUTINE_STANDARD_CALL {
-	LPFIBER_START_ROUTINE FiberRoutine;
-	LPVOID Parameter;
+	LPFIBER_START_ROUTINE UserRoutine;
+	LPVOID UserParameter;
 }COROUTINE_STANDARD_CALL, *PCOROUTINE_STANDARD_CALL;
 
 //延时执行对象
@@ -54,24 +54,39 @@ typedef struct _COROUTINE_MESSAGE_NODE {
 }COROUTINE_MESSAGE_NODE, *PCOROUTINE_MESSAGE_NODE;
 
 //纤程上下文
-typedef struct _COROUTINE_FIBER_CONTEXT {
-	LPVOID UserParameter;
+typedef struct _COROUTINE_FIBER_INSTANCE {
+	LPVOID FiberRoutine;
+	LPVOID Parameter;
 	COROUTINE_MESSAGE_QUEUE InternalMessageQueue;
-}COROUTINE_FIBER_CONTEXT;
+}COROUTINE_FIBER_INSTANCE, *PCOROUTINE_FIBER_INSTANCE;
+
+//阻塞中的Fiber
+typedef struct _COROUTINE_PENDING_FIBER {
+	SLIST_ENTRY Entry;
+	LPVOID PendingFiber;
+}COROUTINE_PENDING_FIBER,*PCOROUTINE_PENDING_FIBER;
 
 //一个协程实例
 typedef struct _COROUTINE_INSTANCE {
 	HANDLE Iocp;
 	HANDLE ThreadHandle;
 
-	PVOID ScheduleRoutine;
-	PVOID InitialRoutine;
+	LPVOID HostThread;
 
-	std::list<void*>* FiberList;
+	HANDLE ScheduleRoutine;
+	HANDLE InitialRoutine;
+
+	std::list<HANDLE>* FiberList;
 	std::list<PCOROUTINE_EXECUTE_DELAY>* DelayExecutionList;
-	
+
 	BOOLEAN LastFiberFinished;
+	HANDLE LastFiber;
 }COROUTINE_INSTANCE, *PCOROUTINE_INSTANCE;
+
+#define STORE_FIBER_INSTANCE(_inst_)			(FlsSetValue(Co_FiberInstanceIndex,(PVOID)(_inst_)))
+#define RETRIEVE_FIBER_INSTANCE()				((HANDLE)FlsGetValue(Co_FiberInstanceIndex))
+#define GET_FIBER_FROM_INSTANCE(_handle_)		(((PCOROUTINE_FIBER_INSTANCE)(_handle_))->FiberRoutine)
+#define GET_PARA_FROM_INSTANCE(_handle_)		(((PCOROUTINE_FIBER_INSTANCE)(_handle_))->Parameter)
 
 /**
  * 手动进行协程调度
@@ -95,7 +110,7 @@ CoInsertRoutine(
 /**
  * 创建一个兼容线程ABI的协程
  */
-BOOLEAN
+HANDLE
 CoInsertCompatRoutine(
 	SIZE_T StackSize,
 	LPTHREAD_START_ROUTINE StartRoutine,
@@ -107,7 +122,7 @@ CoInsertCompatRoutine(
  * 创建一个普通的纤程
  * 为了保证纤程对象能及时的回收，尽量调用这个接口
  */
-BOOLEAN
+HANDLE
 CoInsertStandardRoutine(
 	SIZE_T StackSize,
 	LPFIBER_START_ROUTINE StartRoutine,
@@ -144,4 +159,11 @@ CoCreateCoroutine(
 	LPFIBER_START_ROUTINE InitRoutine,
 	LPVOID Parameter,
 	BOOLEAN NewThread
+);
+
+/**
+ * 初始化协程库
+ */
+VOID
+CoInitialize(
 );

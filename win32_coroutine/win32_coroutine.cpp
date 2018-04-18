@@ -1,6 +1,8 @@
 // win32_coroutine.cpp : 定义控制台应用程序的入口点。
 //
 
+#define UMDF_USING_NTSTATUS
+
 #include "stdafx.h"
 #include "windows.h"
 #include <ntstatus.h>
@@ -14,8 +16,18 @@ typedef DWORD NTSTATUS;
 
 using namespace std;
 
-SIZE_T Co_SystemPageSize = 4096;
-SIZE_T Co_ProcessorCount;
+//执行优先级=事件基准优先级+时间基数+纤程优先级
+
+#define PRIORITY_BASE_TIMER			1
+#define PRIORITY_BASE_IOCP			10
+#define PRIORITY_BASE_NORMAL		100
+
+#define PRIORITY_INCREMENT			1
+
+DWORD Co_SystemPageSize = 4096;
+DWORD Co_ProcessorCount;
+
+DWORD Co_FiberInstanceIndex;
 
 typedef
 ULONG 
@@ -168,6 +180,15 @@ CoGetDynamicImportRoutine(
 	return GetProcAddress(Module, RoutineName);
 }
 
+//之所以提供两个宿主函数，是为了执行CoYeild(TRUE)后及时的销毁Fiber对象
+//否则原始代码需要手动进行调度，这会破坏非入侵的设计目标
+
+//而对于参数，为了提供一些内建组件以支持消息传递等功能，所有Fiber的参数
+//必须是一个COROUTINE_FIBER_INSTANCE结构，宿主函数则在其中的Parameter
+//中再定义自己的参数
+
+//如果用户希望手动调度结束纤程，就不要使用宿主函数
+
 /**
  * 线程函数执行宿主
  */
@@ -178,10 +199,11 @@ WINAPI CoCompatRoutineHost(
 
 	DWORD StackSize;
 	//获取参数
-	PCOROUTINE_COMPAT_CALL CompatCall = (PCOROUTINE_COMPAT_CALL)lpFiberParameter;
+	PCOROUTINE_COMPAT_CALL CompatCall = (PCOROUTINE_COMPAT_CALL)GET_PARA_FROM_INSTANCE((HANDLE)lpFiberParameter);
+	STORE_FIBER_INSTANCE(lpFiberParameter);
 
 	__try {
-		CompatCall->CompatRoutine(CompatCall->Parameter);
+		CompatCall->UserRoutine(CompatCall->UserParameter);
 	}
 	__except (GetExceptionCode() == EXCEPTION_STACK_OVERFLOW) {
 
@@ -193,6 +215,7 @@ WINAPI CoCompatRoutineHost(
 		}
 	}
 
+	//销毁宿主参数
 	free(CompatCall);
 
 	CoYield(TRUE);
@@ -208,10 +231,11 @@ WINAPI CoStandardRoutineHost(
 
 	DWORD StackSize;
 	//获取参数
-	PCOROUTINE_STANDARD_CALL StandardCall = (PCOROUTINE_STANDARD_CALL)lpFiberParameter;
+	PCOROUTINE_STANDARD_CALL StandardCall = (PCOROUTINE_STANDARD_CALL)GET_PARA_FROM_INSTANCE((HANDLE)lpFiberParameter);
+	STORE_FIBER_INSTANCE(lpFiberParameter);
 
 	__try {
-		StandardCall->FiberRoutine(StandardCall->Parameter);
+		StandardCall->UserRoutine(StandardCall->UserParameter);
 	}
 	__except (GetExceptionCode() == EXCEPTION_STACK_OVERFLOW) {
 
@@ -223,6 +247,7 @@ WINAPI CoStandardRoutineHost(
 		}
 	}
 
+	//销毁宿主参数
 	free(StandardCall);
 
 	CoYield(TRUE);
@@ -239,7 +264,12 @@ CoYield(
 	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)TlsGetValue(0);
 	Instance->LastFiberFinished = Terminate;
 
-	SwitchToFiber(Instance->ScheduleRoutine);
+	//如果结束，在这里就销毁实例参数
+	if (Terminate) {
+		free(RETRIEVE_FIBER_INSTANCE());
+	}
+
+	SwitchToFiber(GET_FIBER_FROM_INSTANCE(Instance->ScheduleRoutine));
 }
 
 /**
@@ -255,11 +285,10 @@ WINAPI CoScheduleRoutine(
 	LPOVERLAPPED Overlapped;
 	DWORD Timeout = 0;
 	PVOID Victim;
-	DWORD TransBytes;
-	DWORD Flags;
 
 	//从TLS中获取协程实例
 	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)TlsGetValue(0);
+	PCOROUTINE_FIBER_INSTANCE FiInstance;
 
 DEAL_COMPLETED_IO:
 	//首先处理延时执行队列
@@ -276,7 +305,7 @@ DEAL_COMPLETED_IO:
 
 		//如果执行完毕
 		if (Instance->LastFiberFinished == TRUE) {
-			DeleteFiber(Victim);
+			DeleteFiber(ExecuteDelay->Fiber);
 			Instance->LastFiberFinished = FALSE;
 		}
 	}
@@ -311,10 +340,15 @@ DEAL_COMPLETED_IO:
 	//继续执行因为其他原因打断的协程或者新的协程
 	if (!Instance->FiberList->empty()) {
 
-		Victim = (PVOID)Instance->FiberList->front();
+		//获取第一个Instance
+		FiInstance = (PCOROUTINE_FIBER_INSTANCE)Instance->FiberList->front();
 		Instance->FiberList->pop_front();
+
+		//跳转到Instance
+		Victim = FiInstance->FiberRoutine;
 		SwitchToFiber(Victim);
 		
+		//如果用户结束，销毁Fiber相关的内存
 		if (Instance->LastFiberFinished == TRUE) {
 			DeleteFiber(Victim);
 			Instance->LastFiberFinished = FALSE;
@@ -335,40 +369,40 @@ DEAL_COMPLETED_IO:
 /**
  * 创建一个协程
  * 事实上调试发现，StackSize无论指定多少，只要栈空间不够，系统会
- * 自动申请新的栈空间，而不会触发异常，所以这个值建议取值和PageSize一样
+ * 自动申请新的栈空间，而不会触发异常，所以这个值建议取值和PageSize
  */
-BOOLEAN
-CoInsertRoutine(
+PCOROUTINE_FIBER_INSTANCE
+CoCreateFiberInstance(
 	SIZE_T StackSize,
 	LPFIBER_START_ROUTINE StartRoutine,
-	LPVOID Parameter,
-	PCOROUTINE_INSTANCE Instance
+	LPVOID Parameter
 ) {
 
-	PCOROUTINE_INSTANCE CoInstance;
-	if (Instance)
-		CoInstance = Instance;
-	else
-		CoInstance = (PCOROUTINE_INSTANCE)TlsGetValue(0);
+	//分配纤程实例
+	PCOROUTINE_FIBER_INSTANCE FiInstance;
+	FiInstance = (PCOROUTINE_FIBER_INSTANCE)malloc(sizeof(COROUTINE_FIBER_INSTANCE));
+	if (FiInstance == NULL)
+		return NULL;
 
-	if (CoInstance == NULL)
-		return FALSE;
-
-	//创建一个Coroutine
-	PVOID NewFiber = CreateFiberEx(Co_SystemPageSize, StackSize, 0, StartRoutine, Parameter);
+	//创建一个纤程，纤程实例作为参数
+	PVOID NewFiber = CreateFiberEx(Co_SystemPageSize, StackSize, 0, StartRoutine, FiInstance);
 	if (NewFiber == NULL)
-		return FALSE;
+		return NULL;
 
-	//保存进Coroutine队列
-	CoInstance->FiberList->push_back(NewFiber);
-	
-	return TRUE;
+	//纤程参数
+	FiInstance->Parameter = Parameter;
+	//启动函数
+	FiInstance->FiberRoutine = NewFiber;
+
+	return FiInstance;
 }
+
+#define GET_CO_INST(_inst_)		(((_inst_)==NULL)?TlsGetValue(0):(_inst_))
 
 /**
  * 创建一个兼容线程ABI的协程
  */
-BOOLEAN
+HANDLE
 CoInsertCompatRoutine(
 	SIZE_T StackSize,
 	LPTHREAD_START_ROUTINE StartRoutine,
@@ -377,17 +411,34 @@ CoInsertCompatRoutine(
 ) {
 
 	PCOROUTINE_COMPAT_CALL CompatCall = (PCOROUTINE_COMPAT_CALL)malloc(sizeof(COROUTINE_COMPAT_CALL));
-	CompatCall->CompatRoutine = StartRoutine;
-	CompatCall->Parameter = Parameter;
+	CompatCall->UserRoutine = StartRoutine;
+	CompatCall->UserParameter = Parameter;
 
-	return CoInsertRoutine(StackSize, CoCompatRoutineHost, CompatCall, Instance);
+	//获取协程实例
+	PCOROUTINE_INSTANCE CoInstance = (PCOROUTINE_INSTANCE)GET_CO_INST(Instance);
+	if (CoInstance == NULL)
+		return NULL;
+
+	//堆栈至少一个页面
+	if (StackSize < Co_SystemPageSize)
+		StackSize = Co_SystemPageSize;
+
+	//创建纤程实例
+	PCOROUTINE_FIBER_INSTANCE FiInstance = CoCreateFiberInstance(StackSize, CoCompatRoutineHost, CompatCall);
+	if (FiInstance == NULL)
+		return NULL;
+
+	//保存进纤程实例队列
+	CoInstance->FiberList->push_back(FiInstance);
+
+	return (HANDLE)FiInstance;
 }
 
 /**
  * 创建一个普通的纤程
  * 为了保证纤程对象能及时的回收，尽量调用这个接口
  */
-BOOLEAN
+HANDLE
 CoInsertStandardRoutine(
 	SIZE_T StackSize,
 	LPFIBER_START_ROUTINE StartRoutine,
@@ -396,14 +447,27 @@ CoInsertStandardRoutine(
 ) {
 
 	PCOROUTINE_STANDARD_CALL StandardCall = (PCOROUTINE_STANDARD_CALL)malloc(sizeof(COROUTINE_STANDARD_CALL));
-	StandardCall->FiberRoutine = StartRoutine;
-	StandardCall->Parameter = Parameter;
-	
+	StandardCall->UserRoutine = StartRoutine;
+	StandardCall->UserParameter = Parameter;
+
+	//获取协程实例
+	PCOROUTINE_INSTANCE CoInstance = (PCOROUTINE_INSTANCE)GET_CO_INST(Instance);
+	if (CoInstance == NULL)
+		return NULL;
+
 	//堆栈至少一个页面
 	if (StackSize < Co_SystemPageSize)
 		StackSize = Co_SystemPageSize;
 
-	return CoInsertRoutine(StackSize, CoStandardRoutineHost, StandardCall, Instance);
+	//创建纤程实例
+	PCOROUTINE_FIBER_INSTANCE FiInstance = CoCreateFiberInstance(StackSize, CoStandardRoutineHost, StandardCall);
+	if (FiInstance == NULL)
+		return NULL;
+
+	//保存进纤程实例队列
+	CoInstance->FiberList->push_back(FiInstance);
+
+	return (HANDLE)FiInstance;
 }
 
 /**
@@ -416,20 +480,22 @@ CoThreadEntryPoint(
 ) {
 
 	PCOROUTINE_INSTANCE Instance = (PCOROUTINE_INSTANCE)lpThreadParameter;
-	TlsSetValue(0, Instance);
 
-	ConvertThreadToFiber(NULL);
+	Instance->HostThread = ConvertThreadToFiber(NULL);
 	
-	//创建协程入口点
-	Instance->ScheduleRoutine = CreateFiber(Co_SystemPageSize, CoScheduleRoutine, NULL);
+	//创建协程入口点-调度纤程
+	Instance->ScheduleRoutine = CoCreateFiberInstance(0x1000, CoScheduleRoutine, NULL);
 	if (Instance->ScheduleRoutine == NULL)
 		return 0;
 
-	Instance->FiberList->push_back(Instance->InitialRoutine);
+	//切换到调度纤程
+	SwitchToFiber(GET_FIBER_FROM_INSTANCE(Instance->ScheduleRoutine));
 
-	SwitchToFiber(Instance->ScheduleRoutine);
-
+	//从调度纤程退出
 	ConvertFiberToThread();
+
+	free(Instance);
+	
 	return 0;
 }
 
@@ -441,7 +507,7 @@ CoThreadEntryPoint(
  */
 VOID
 CoDelayExecutionAtLeast(
-	PVOID Fiber,
+	LPVOID Fiber,
 	DWORD MillionSecond
 ) {
 
@@ -495,7 +561,7 @@ CoStartCoroutineManually(
 	if (ConvertThreadToFiber(NULL) == NULL)
 		return FALSE;
 
-	SwitchToFiber(Instance->ScheduleRoutine);
+	SwitchToFiber(GET_FIBER_FROM_INSTANCE(Instance->ScheduleRoutine));
 
 	//永不到达
 	return TRUE;
@@ -526,9 +592,9 @@ CoCreateCoroutine(
 		goto ERROR_EXIT;
 
 	//创建协程调度队列
-	Instance->FiberList = new list<void*>;
+	Instance->FiberList = new list<HANDLE>;
 	Instance->DelayExecutionList = new list<PCOROUTINE_EXECUTE_DELAY>;
-	Instance->InitialRoutine = CreateFiberEx(StackSize, 0x1000, 0, InitRoutine, Parameter);
+	Instance->InitialRoutine = CoInsertStandardRoutine(0x1000, InitRoutine, Parameter, Instance);
 	if (Instance->InitialRoutine == NULL)
 		goto ERROR_EXIT;
 
@@ -546,7 +612,7 @@ CoCreateCoroutine(
 		TlsSetValue(0, Instance);
 
 		//创建协程入口点
-		Instance->ScheduleRoutine = CreateFiber(Co_SystemPageSize, CoScheduleRoutine, NULL);
+		Instance->ScheduleRoutine = CoCreateFiberInstance(0x1000, CoScheduleRoutine, NULL);
 		if (Instance->ScheduleRoutine == NULL)
 			goto ERROR_EXIT;
 
@@ -572,6 +638,14 @@ ERROR_EXIT:
 VOID
 CoInitialize(
 ) {
+
+	SYSTEM_INFO SystemInfo;
+	GetSystemInfo(&SystemInfo);
+
+	Co_SystemPageSize = SystemInfo.dwPageSize;
+	Co_ProcessorCount = SystemInfo.dwNumberOfProcessors;
+
+	Co_FiberInstanceIndex = FlsAlloc(NULL);
 
 	return;
 }
