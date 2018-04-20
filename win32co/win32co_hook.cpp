@@ -1,6 +1,5 @@
 
-#include "win32_hook.h"
-#include "win32_sysroutine.h"
+#include "win32co_coroutine.h"
 
 /**
  * 获取进程映像基址
@@ -108,7 +107,7 @@ PeGetOrdinalImportName(
 	PDWORD NameTable = (PDWORD)((PUCHAR)BaseAddress + Export->AddressOfNames);
 	PUSHORT OrdinalTable = (PUSHORT)((PUCHAR)BaseAddress + Export->AddressOfNameOrdinals);
 
-	for (int i = 0;i < Export->NumberOfNames;i++) {
+	for (DWORD i = 0;i < Export->NumberOfNames;i++) {
 		if (OrdinalTable[i] == Ordinal - Export->Base)
 			return (PCHAR)BaseAddress + NameTable[i];
 	}
@@ -128,7 +127,7 @@ PeGetNameImportIndex(
 	PIMAGE_IMPORT_DESCRIPTOR Import,
 	PSTR RoutineName
 ) {
-
+	
 	PCHAR Name;
 	ULONG Index = 0;
 	PIMAGE_THUNK_DATA TrunkData = (PIMAGE_THUNK_DATA)((PUCHAR)Module + Import->OriginalFirstThunk);

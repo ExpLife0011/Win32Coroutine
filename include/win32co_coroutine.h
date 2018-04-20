@@ -1,11 +1,13 @@
 #pragma once
 
 #include <Windows.h>
-#include <list>
+#include <stdlib.h>
 
-#include "win32_hook.h"
-#include "win32_sysroutine.h"
-#include "win32_error.h"
+#include "win32co_list.h"
+#include "win32co_hook.h"
+#include "win32co_sysroutine.h"
+#include "win32co_error.h"
+#include "win32co_queue.h"
 
 #define PERF_TEST
 
@@ -13,6 +15,8 @@
 #define ASIO_NET		2
 
 #define SIGN_OVERLAPPED	0xff981234
+
+#define COEXPORT __declspec(dllexport)
 
 //重叠对象扩展结构
 typedef struct _COROUTINE_OVERLAPPED_WARPPER {

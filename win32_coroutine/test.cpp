@@ -261,6 +261,10 @@ InitRoutine(
 int main()
 {
 
+	PVOID a = malloc(56);
+	PVOID b = malloc(56);
+	PVOID c = malloc(56);
+	PVOID d = malloc(56);
 	Event = CreateEvent(NULL, FALSE, FALSE, NULL);
 
 	CoInitialize();

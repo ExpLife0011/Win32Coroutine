@@ -39,6 +39,12 @@
     <ClInclude Include="win32_queue.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="win32_error.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="win32_list.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
@@ -69,6 +75,9 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="win32_message_queue.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="win32_error.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

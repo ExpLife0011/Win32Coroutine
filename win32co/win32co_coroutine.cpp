@@ -1,21 +1,10 @@
 // win32_coroutine.cpp : 定义控制台应用程序的入口点。
 //
-
-#define UMDF_USING_NTSTATUS
-
-#include "stdafx.h"
-#include "windows.h"
+#include "win32co_coroutine.h"
 #include <ntstatus.h>
-#include <list>
-
-#include "win32_hook.h"
-#include "win32_sysroutine.h"
-#include "win32_coroutine.h"
-#include "win32_list.h"
+#include <intrin.h>
 
 typedef DWORD NTSTATUS;
-
-using namespace std;
 
 //Coroutine--->Parameter------->Fiber
 //		   --->MessageQueue	 |->FiberParameter
