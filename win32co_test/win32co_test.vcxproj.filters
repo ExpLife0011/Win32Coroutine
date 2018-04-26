@@ -32,5 +32,11 @@
     <ClCompile Include="win32co_test.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="test_fileio.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="test_netio.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

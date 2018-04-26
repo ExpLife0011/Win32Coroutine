@@ -2,18 +2,44 @@
 
 #include <Windows.h>
 
-typedef enum {
-	Warning,
-	Error,
-	FatalError
-}ERROR_LEVEL;
+#define COEXPORT __declspec(dllexport)
 
-/**
- * 显示致命错误并退出
- */
-VOID
-CoShowError(
-	INT Errno,
-	PSTR Syscall,
-	ERROR_LEVEL Errlevel
-);
+namespace Win32Coroutine {
+
+	namespace Error {
+
+		typedef enum {
+			Warning,
+			Error,
+			FatalError
+		}ERROR_LEVEL;
+
+		/**
+		 * 报告自身错误
+		 */
+		COEXPORT
+			VOID
+			CoShowCoroutineError(
+				PSTR ErrMsg,
+				PSTR FuncName,
+				ERROR_LEVEL Errlevel
+			);
+
+		/**
+		 * 显示致命错误并退出
+		 */
+		COEXPORT
+			VOID
+			CoShowSystemError(
+				INT Errno,
+				PSTR Syscall,
+				ERROR_LEVEL Errlevel
+			);
+
+		VOID
+			CoError_LowMemory(
+			);
+
+	}
+
+}

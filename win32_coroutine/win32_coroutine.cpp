@@ -198,10 +198,6 @@ CoPreInitialize(
 //之所以提供两个宿主函数，是为了执行CoYeild(TRUE)后及时的销毁Fiber对象
 //否则原始代码需要手动进行调度，这会破坏非入侵的设计目标
 
-//而对于参数，为了提供一些内建组件以支持消息传递等功能，所有Fiber的参数
-//必须是一个COROUTINE_FIBER_INSTANCE结构，宿主函数则在其中的Parameter
-//中再定义自己的参数
-
 //如果用户希望手动调度结束纤程，就不要使用宿主函数
 
 /**
@@ -214,11 +210,11 @@ WINAPI CoCompatRoutineHost(
 
 	DWORD StackSize;
 	//获取参数
-	PCOROUTINE_COMPAT_CALL CompatCall = (PCOROUTINE_COMPAT_CALL)GET_PARA_FROM_INSTANCE((HANDLE)lpFiberParameter);
+	PCOROUTINE_FIBER_INSTANCE FiInstance = (PCOROUTINE_FIBER_INSTANCE)lpFiberParameter;
 	CoPreInitialize(lpFiberParameter);
 
 	__try {
-		CompatCall->UserRoutine(CompatCall->UserParameter);
+		FiInstance->UserCompatRoutine(FiInstance->UserParameter);
 	}
 	__except (GetExceptionCode() == EXCEPTION_STACK_OVERFLOW) {
 
@@ -229,9 +225,6 @@ WINAPI CoCompatRoutineHost(
 			_resetstkoflw();
 		}
 	}
-
-	//销毁宿主参数
-	free(CompatCall);
 
 	CoYield(TRUE);
 }
@@ -246,11 +239,11 @@ WINAPI CoStandardRoutineHost(
 
 	DWORD StackSize;
 	//获取参数
-	PCOROUTINE_STANDARD_CALL StandardCall = (PCOROUTINE_STANDARD_CALL)GET_PARA_FROM_INSTANCE((HANDLE)lpFiberParameter);
+	PCOROUTINE_FIBER_INSTANCE FiInstance = (PCOROUTINE_FIBER_INSTANCE)lpFiberParameter;
 	CoPreInitialize(lpFiberParameter);
 
 	__try {
-		StandardCall->UserRoutine(StandardCall->UserParameter);
+		FiInstance->UserStanderRoutine(FiInstance->UserParameter);
 	}
 	__except (GetExceptionCode() == EXCEPTION_STACK_OVERFLOW) {
 
@@ -261,9 +254,6 @@ WINAPI CoStandardRoutineHost(
 			_resetstkoflw();
 		}
 	}
-
-	//销毁宿主参数
-	free(StandardCall);
 
 	CoYield(TRUE);
 }
@@ -406,7 +396,10 @@ CoCreateFiberInstance(
 		return NULL;
 
 	//纤程参数
-	FiInstance->Parameter = Parameter;
+	if (StartRoutine == CoCompatRoutineHost || StartRoutine == CoStandardRoutineHost)
+		Parameter = FiInstance;
+	else
+		Parameter = Parameter;
 	//启动函数
 	FiInstance->FiberRoutine = NewFiber;
 
@@ -426,10 +419,6 @@ CoInsertCompatRoutine(
 	PCOROUTINE_INSTANCE Instance
 ) {
 
-	PCOROUTINE_COMPAT_CALL CompatCall = (PCOROUTINE_COMPAT_CALL)malloc(sizeof(COROUTINE_COMPAT_CALL));
-	CompatCall->UserRoutine = StartRoutine;
-	CompatCall->UserParameter = Parameter;
-
 	//获取协程实例
 	PCOROUTINE_INSTANCE CoInstance = (PCOROUTINE_INSTANCE)GET_COROUTINE_INST(Instance);
 	if (CoInstance == NULL)
@@ -440,9 +429,12 @@ CoInsertCompatRoutine(
 		StackSize = Co_SystemPageSize;
 
 	//创建纤程实例
-	PCOROUTINE_FIBER_INSTANCE FiInstance = CoCreateFiberInstance(StackSize, CoCompatRoutineHost, CompatCall);
+	PCOROUTINE_FIBER_INSTANCE FiInstance = CoCreateFiberInstance(StackSize, CoCompatRoutineHost, NULL);
 	if (FiInstance == NULL)
 		return NULL;
+
+	FiInstance->UserCompatRoutine = StartRoutine;
+	FiInstance->UserParameter = Parameter;
 
 	//保存进纤程实例队列
 	InsertTailList(&Instance->FiberInstanceList, &FiInstance->Entry);
@@ -462,10 +454,6 @@ CoInsertStandardRoutine(
 	PCOROUTINE_INSTANCE Instance
 ) {
 
-	PCOROUTINE_STANDARD_CALL StandardCall = (PCOROUTINE_STANDARD_CALL)malloc(sizeof(COROUTINE_STANDARD_CALL));
-	StandardCall->UserRoutine = StartRoutine;
-	StandardCall->UserParameter = Parameter;
-
 	//获取协程实例
 	PCOROUTINE_INSTANCE CoInstance = (PCOROUTINE_INSTANCE)GET_COROUTINE_INST(Instance);
 	if (CoInstance == NULL)
@@ -476,9 +464,12 @@ CoInsertStandardRoutine(
 		StackSize = Co_SystemPageSize;
 
 	//创建纤程实例
-	PCOROUTINE_FIBER_INSTANCE FiInstance = CoCreateFiberInstance(StackSize, CoStandardRoutineHost, StandardCall);
+	PCOROUTINE_FIBER_INSTANCE FiInstance = CoCreateFiberInstance(StackSize, CoStandardRoutineHost, NULL);
 	if (FiInstance == NULL)
 		return NULL;
+
+	FiInstance->UserStanderRoutine = StartRoutine;
+	FiInstance->UserParameter = Parameter;
 
 	//保存进纤程实例队列
 	InsertTailList(&Instance->FiberInstanceList, &FiInstance->Entry);

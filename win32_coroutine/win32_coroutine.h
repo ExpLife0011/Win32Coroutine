@@ -59,10 +59,14 @@ typedef struct _COROUTINE_MESSAGE_NODE {
 
 //纤程上下文
 typedef struct _COROUTINE_FIBER_INSTANCE {
+
 	LIST_ENTRY Entry;
-	LPVOID FiberRoutine;
-	LPVOID Parameter;
+	PVOID FiberRoutine;
 	COROUTINE_MESSAGE_QUEUE InternalMessageQueue;
+
+	LPFIBER_START_ROUTINE UserStanderRoutine;
+	LPTHREAD_START_ROUTINE UserCompatRoutine;
+	PVOID UserParameter;
 }COROUTINE_FIBER_INSTANCE, *PCOROUTINE_FIBER_INSTANCE;
 
 //阻塞中的Fiber
@@ -179,5 +183,6 @@ CoCreateCoroutine(
  * 初始化协程库
  */
 VOID
+WIN
 CoInitialize(
 );

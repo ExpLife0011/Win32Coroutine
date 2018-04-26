@@ -36,10 +36,8 @@
     <ClCompile Include="win32co_error.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="win32co.def">
+    <ClCompile Include="win32co_msgqueue.cpp">
       <Filter>源文件</Filter>
-    </None>
+    </ClCompile>
   </ItemGroup>
 </Project>
