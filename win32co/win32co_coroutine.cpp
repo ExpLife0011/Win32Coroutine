@@ -178,9 +178,14 @@ namespace Win32Coroutine {
 			) {
 
 			if (Co_LibInitialized == FALSE) {
-				Error::CoShowSystemError(ERROR_BAD_ENVIRONMENT, NULL, Error::ERROR_LEVEL::Error);
+				Error::CoShowSystemError(ERROR_BAD_ENVIRONMENT,
+					NULL,
+					Error::ERROR_LEVEL::Error
+				);
 				return FALSE;
 			}
+
+			return TRUE;
 		}
 
 		/** 
@@ -335,6 +340,12 @@ namespace Win32Coroutine {
 			SwitchToFiber(GET_FIBER_FROM_INSTANCE(Instance->ScheduleRoutine));
 		}
 
+#define CHECK_FINISH(Fiber)									\
+		if (Instance->LastFiberFinished == TRUE) {			\
+			DeleteFiber(Fiber);								\
+			Instance->LastFiberFinished = FALSE;			\
+		}													\
+
 		/**
 		 * 调度协程
 		 */
@@ -353,7 +364,10 @@ namespace Win32Coroutine {
 			PCOROUTINE_FIBER_INSTANCE FiInstance;
 			PCOROUTINE_INSTANCE Instance = CoGetCoInstance();
 			if (Instance == NULL) {
-				Error::CoShowCoroutineError("协程实例获取失败.", "CoScheduleRoutine", Error::ERROR_LEVEL::FatalError);
+				Error::CoShowCoroutineError("协程实例获取失败.", 
+					"CoScheduleRoutine", 
+					Error::ERROR_LEVEL::FatalError
+				);
 			}
 
 		DEAL_COMPLETED_IO:
@@ -372,10 +386,7 @@ namespace Win32Coroutine {
 				SwitchToFiber(ExecuteDelay->Fiber);
 
 				//如果执行完毕
-				if (Instance->LastFiberFinished == TRUE) {
-					DeleteFiber(ExecuteDelay->Fiber);
-					Instance->LastFiberFinished = FALSE;
-				}
+				CHECK_FINISH(ExecuteDelay->Fiber);
 			}
 
 			//随后处理Iocp的完成事件
@@ -399,10 +410,7 @@ namespace Win32Coroutine {
 				Victim = Context->Fiber;
 				SwitchToFiber(Victim);
 
-				if (Instance->LastFiberFinished == TRUE) {
-					DeleteFiber(Victim);
-					Instance->LastFiberFinished = FALSE;
-				}
+				CHECK_FINISH(Victim);
 			}
 			
 			//继续执行因为其他原因打断的协程或者新的协程
@@ -416,10 +424,7 @@ namespace Win32Coroutine {
 				SwitchToFiber(Victim);
 
 				//如果用户结束，销毁Fiber相关的内存
-				if (Instance->LastFiberFinished == TRUE) {
-					DeleteFiber(Victim);
-					Instance->LastFiberFinished = FALSE;
-				}
+				CHECK_FINISH(Victim);
 
 				//如果有协程可执行，那么可能后面还有新的协程等待执行
 				Timeout = 0;
@@ -458,7 +463,10 @@ namespace Win32Coroutine {
 			//创建一个纤程，纤程实例作为参数
 			PVOID NewFiber = CreateFiberEx(Co_SystemPageSize, StackSize, 0, StartRoutine, FiInstance);
 			if (NewFiber == NULL) {
-				Error::CoShowSystemError(GetLastError(), "CreateFiberEx", Error::ERROR_LEVEL::Error);
+				Error::CoShowSystemError(GetLastError(),
+					"CreateFiberEx",
+					Error::ERROR_LEVEL::Error
+				);
 				return NULL;
 			}
 
@@ -491,7 +499,10 @@ namespace Win32Coroutine {
 			//获取协程实例
 			PCOROUTINE_INSTANCE CoInstance = (PCOROUTINE_INSTANCE)GET_COROUTINE_INST(Instance);
 			if (CoInstance == NULL) {
-				Error::CoShowCoroutineError("协程实例获取失败.", NULL, Error::ERROR_LEVEL::Error);
+				Error::CoShowCoroutineError("协程实例获取失败.", 
+					NULL, 
+					Error::ERROR_LEVEL::Error
+				);
 				return NULL;
 			}
 
@@ -502,7 +513,10 @@ namespace Win32Coroutine {
 			//创建纤程实例
 			PCOROUTINE_FIBER_INSTANCE FiInstance = CoCreateFiberInstance(StackSize, CoCompatRoutineHost, NULL);
 			if (FiInstance == NULL) {
-				Error::CoShowCoroutineError("创建纤程实例失败.", "CoInsertCompatRoutine", Error::ERROR_LEVEL::Error);
+				Error::CoShowCoroutineError("创建纤程实例失败.", 
+					"CoInsertCompatRoutine", 
+					Error::ERROR_LEVEL::Error
+				);
 				return NULL;
 			}
 
@@ -532,7 +546,10 @@ namespace Win32Coroutine {
 			//获取协程实例
 			PCOROUTINE_INSTANCE CoInstance = (PCOROUTINE_INSTANCE)GET_COROUTINE_INST(Instance);
 			if (CoInstance == NULL) {
-				Error::CoShowCoroutineError("协程实例获取失败.", NULL, Error::ERROR_LEVEL::Error);
+				Error::CoShowCoroutineError("协程实例获取失败.", 
+					NULL,
+					Error::ERROR_LEVEL::Error
+				);
 				return NULL;
 			}
 
@@ -543,7 +560,10 @@ namespace Win32Coroutine {
 			//创建纤程实例
 			PCOROUTINE_FIBER_INSTANCE FiInstance = CoCreateFiberInstance(StackSize, CoStandardRoutineHost, NULL);
 			if (FiInstance == NULL) {
-				Error::CoShowCoroutineError("创建纤程实例失败.", "CoInsertStandardRoutine", Error::ERROR_LEVEL::Error);
+				Error::CoShowCoroutineError("创建纤程实例失败.",
+					"CoInsertStandardRoutine",
+					Error::ERROR_LEVEL::Error
+				);
 				return NULL;
 			}
 
@@ -569,19 +589,28 @@ namespace Win32Coroutine {
 
 			Instance->HostThread = ConvertThreadToFiber(NULL);
 			if (Instance->HostThread == NULL) {
-				Error::CoShowSystemError(GetLastError(), "ConvertThreadToFiber", Error::ERROR_LEVEL::Error);
+				Error::CoShowSystemError(GetLastError(), 
+					"ConvertThreadToFiber", 
+					Error::ERROR_LEVEL::Error
+				);
 				goto EXIT;
 			}
 
 			if (TlsSetValue(0, Instance) == FALSE) {
-				Error::CoShowSystemError(GetLastError(), "TlsSetValue", Error::ERROR_LEVEL::Error);
+				Error::CoShowSystemError(GetLastError(), 
+					"TlsSetValue",
+					Error::ERROR_LEVEL::Error
+				);
 				goto REVERT;
 			}
 
 			//创建协程入口点-调度纤程
 			Instance->ScheduleRoutine = CoCreateFiberInstance(0x1000, CoScheduleRoutine, Instance);
 			if (Instance->ScheduleRoutine == NULL) {
-				Error::CoShowCoroutineError("创建调度纤程失败.", "CoThreadEntryPoint", Error::ERROR_LEVEL::Error);
+				Error::CoShowCoroutineError("创建调度纤程失败.", 
+					"CoThreadEntryPoint", 
+					Error::ERROR_LEVEL::Error
+				);
 				goto REVERT;
 			}
 
@@ -708,7 +737,10 @@ EXIT:
 			//创建线程相关的IO完成端口
 			Instance->Iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
 			if (Instance->Iocp == NULL) {
-				Error::CoShowSystemError(GetLastError(), "CreateIoCompletionPort", Error::ERROR_LEVEL::Error);
+				Error::CoShowSystemError(GetLastError(), 
+					"CreateIoCompletionPort", 
+					Error::ERROR_LEVEL::Error
+				);
 				goto ERROR_EXIT;
 			}
 
@@ -718,7 +750,10 @@ EXIT:
 			if (InitRoutine) {
 				Instance->InitialRoutine = CoInsertStandardRoutine(0x1000, InitRoutine, Parameter, Instance);
 				if (Instance->InitialRoutine == NULL) {
-					Error::CoShowCoroutineError("创建入口函数失败.", "CoCreateCoroutine", Error::ERROR_LEVEL::Error);
+					Error::CoShowCoroutineError("创建入口函数失败.", 
+						"CoCreateCoroutine",
+						Error::ERROR_LEVEL::Error
+					);
 					goto ERROR_EXIT;
 				}
 			}
@@ -728,7 +763,10 @@ EXIT:
 				//创建协程宿主线程
 				Instance->ThreadHandle = CreateThread(NULL, 0, CoThreadEntryPoint, Instance, 0, &ThreadId);
 				if (Instance->ThreadHandle == NULL) {
-					Error::CoShowSystemError(GetLastError(), "CreateThread", Error::ERROR_LEVEL::Error);
+					Error::CoShowSystemError(GetLastError(),
+						"CreateThread",
+						Error::ERROR_LEVEL::Error
+					);
 					goto ERROR_EXIT;
 				}
 			}

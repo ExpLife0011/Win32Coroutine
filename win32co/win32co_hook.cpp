@@ -78,7 +78,7 @@ namespace Win32Coroutine {
 
 			while (ImportArray->Name != NULL) {
 
-				if (stricmp(ModuleName, (char*)Module + ImportArray->Name) == 0)
+				if (_stricmp(ModuleName, (char*)Module + ImportArray->Name) == 0)
 					return ImportArray;
 
 				ImportArray++;

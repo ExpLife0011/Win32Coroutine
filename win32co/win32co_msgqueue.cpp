@@ -34,10 +34,11 @@ namespace Win32Coroutine {
 				SIZE_T MessageSize
 			) {
 
-			PCOROUTINE_MESSAGE_NODE Node = (PCOROUTINE_MESSAGE_NODE)malloc(sizeof(*Node));
+			PCOROUTINE_MESSAGE_NODE Node = (PCOROUTINE_MESSAGE_NODE)_aligned_malloc(sizeof(*Node), 8);
 			if (Node == NULL)
 				return FALSE;
 
+			//分配一个消息结构体
 			Node->UserBuffer = malloc(MessageSize);
 			if (Node->UserBuffer == NULL) {
 				free(Node);
@@ -63,30 +64,32 @@ namespace Win32Coroutine {
 			) {
 
 			ULONG SwapCount;
+			PCOROUTINE_MESSAGE_NODE Node;
 			PSLIST_ENTRY Entry;
-			SLIST_HEADER TempList;
-			InitializeSListHead(&TempList);
+			USHORT PendingCount;
+			PVOID UserBuffer;
 
 			//工作队列中没有消息了
-			if (CoqGetQueueDepth(&MessageQueue->WorkerQueueHeader) == 0) {
+			if (CoqGetQueueDepth(&MessageQueue->WorkerQueue) == 0) {
+
+				PendingCount = CoqGetQueueDepth(&MessageQueue->PendingQueue);
+				SwapCount = min(PendingCount, 20);
 
 				//等待队列中还有节点
-				if (CoqGetQueueDepth(&MessageQueue->PendingQueueHeader) != 0) {
+				if (SwapCount != 0) {
 
-					//就将等待队列中的节点反序交换到工作队列中，最多10个
+					//就将等待队列中的节点反序交换到工作队列中，最多10个,防止饥饿
 				TRANSMIT:
-					SwapCount = 10;
-					while (SwapCount--) {
-						Entry = CoqDequeue(&MessageQueue->PendingQueueHeader);
-						if (Entry == NULL)
-							break;
-
-						CoqEnqueue(&MessageQueue->WorkerQueueHeader, Entry);
-					}
+					while (SwapCount--)
+						CoqEnqueue(&MessageQueue->WorkerQueue,
+							CoqDequeue(&MessageQueue->PendingQueue)
+						);
 				}
 				else {
-					CoqSwapQueue(&MessageQueue->QueueHeader, &MessageQueue->PendingQueueHeader);
-					if (CoqGetQueueDepth(&MessageQueue->PendingQueueHeader) == 0)
+
+					//接收队列与等待队列交换
+					CoqSwapQueue(&MessageQueue->QueueHeader, &MessageQueue->PendingQueue);
+					if (CoqGetQueueDepth(&MessageQueue->PendingQueue) == 0)
 						return NULL;
 
 					goto TRANSMIT;
@@ -94,11 +97,24 @@ namespace Win32Coroutine {
 
 			}
 
-			Entry = CoqDequeue(&MessageQueue->WorkerQueueHeader);
-			if (Entry == NULL);
-			//error
+			Node = (PCOROUTINE_MESSAGE_NODE)CoqDequeue(&MessageQueue->WorkerQueue);
+			*MessageSize = Node->BufferSize;
+			UserBuffer = Node->UserBuffer;
 
-			return Entry;
+			_aligned_free(Node);
+
+			return UserBuffer;
+		}
+
+		/**
+		 * 删除一个消息队列
+		 */
+		VOID
+			CoDeleteQueue(
+				PCOROUTINE_MESSAGE_QUEUE MessageQueue
+			) {
+
+			free(MessageQueue);
 		}
 
 	}

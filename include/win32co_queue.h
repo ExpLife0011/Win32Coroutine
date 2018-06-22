@@ -11,50 +11,6 @@
 
 #define CoqDequeue(Queue)				InterlockedPopEntrySList(Queue)
 
-//尝试过双向链表，好像不现实
-/*
-VOID 
-CoqInitializeQueue(
-	PLIST_ENTRY QueueHead
-) {
-
-	InitializeListHead(QueueHead);
-}
-
-BOOLEAN
-CoqIsQueueEmpty(
-	PLIST_ENTRY QueueHead
-) {
-
-	return IsListEmpty(QueueHead);
-}
-
-VOID
-CoqEnqueue(
-	PLIST_ENTRY QueueHead,
-	PLIST_ENTRY Entry
-) {
-
-	PLIST_ENTRY FirstEntry;
-	PLIST_ENTRY OldEntry;
-
-	while (TRUE) {
-	
-		FirstEntry = ReadForWriteAccess(&QueueHead->Flink);
-
-		OldEntry = (PLIST_ENTRY)InterlockedCompareExchangePointer((PVOID*)&QueueHead->Flink, Entry, FirstEntry);
-		if (OldEntry != FirstEntry)
-			continue;
-
-		break;
-	}
-
-	FirstEntry->Blink = Entry;
-
-	return;
-}
-*/
-
 /**
  * 交换两个队列的内容
  */

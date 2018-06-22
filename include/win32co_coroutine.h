@@ -1,4 +1,7 @@
+
 #pragma once
+
+#define WIN32_LEAN_AND_MEAN
 
 #include <Windows.h>
 #include <stdlib.h>
@@ -9,7 +12,7 @@
 #include "win32co_hook.h"
 #include "win32co_sysroutine.h"
 #include "win32co_error.h"
-#include "win32co_queue.h"
+#include "win32co_msgqueue.h"
 
 #define PERF_TEST
 
@@ -44,22 +47,6 @@ namespace Win32Coroutine {
 		DWORD64 TimeAtLeast;
 		LPVOID Fiber;
 	}COROUTINE_EXECUTE_DELAY, *PCOROUTINE_EXECUTE_DELAY;
-
-	//消息队列对象
-	//由于Queue是
-	typedef struct _COROUTINE_MESSAGE_QUEUE {
-		SLIST_HEADER QueueHeader;
-		SLIST_HEADER PendingQueueHeader;
-		SLIST_HEADER WorkerQueueHeader;
-		PVOID Fiber;
-	}COROUTINE_MESSAGE_QUEUE, *PCOROUTINE_MESSAGE_QUEUE;
-
-	//消息队列节点
-	typedef struct _COROUTINE_MESSAGE_NODE {
-		SLIST_ENTRY QueueNode;
-		PVOID UserBuffer;
-		SIZE_T BufferSize;
-	}COROUTINE_MESSAGE_NODE, *PCOROUTINE_MESSAGE_NODE;
 
 	//纤程上下文
 	typedef struct _COROUTINE_FIBER_INSTANCE {
